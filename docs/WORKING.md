@@ -37,7 +37,7 @@ cd /path/to/digital_twin
 
 export PROJECT_ID="YOUR_GCP_PROJECT_ID"
 export REGION="us-central1"
-export REPO="digital_twin"
+export REPO="digital-twin"
 export TAG="v1"
 export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/api:${TAG}"
 
@@ -56,7 +56,7 @@ cd /path/to/digital_twin
 
 export PROJECT_ID="YOUR_GCP_PROJECT_ID"
 export REGION="us-central1"
-export REPO="digital_twin"
+export REPO="digital-twin"
 export TAG="v1"
 export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/api:${TAG}"
 
@@ -103,7 +103,7 @@ docker buildx create --use 2>/dev/null || true
 ```bash
 export PROJECT_ID="your-gcp-project-id"
 export REGION="us-central1"
-export REPO="digital_twin"
+export REPO="digital-twin"
 export TAG="v1"   # or $(git rev-parse --short HEAD)
 
 export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/api:${TAG}"
@@ -362,7 +362,7 @@ Official reference: [Workload Identity Federation — attribute conditions](http
 
 The deployer service account needs at least:
 
-- **Artifact Registry:** `roles/artifactregistry.writer` on repo `digital_twin` (or project-level writer)
+- **Artifact Registry:** `roles/artifactregistry.writer` on repo `digital-twin` (or project-level writer). Registry IDs cannot contain underscores.
 - **Cloud Run:** `roles/run.admin` (or narrower if you tighten later)
 - **IAM:** `roles/iam.serviceAccountUser` on **`digital-twin-api@<PROJECT>.iam.gserviceaccount.com`** (runtime SA) if required by your org policy
 

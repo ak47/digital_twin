@@ -17,9 +17,9 @@ variable "name_prefix" {
 }
 
 variable "artifact_registry_repository_id" {
-  description = "Artifact Registry Docker repository id (path segment in docker.pkg.dev URLs). Cloud Run service name stays name_prefix-api."
+  description = "Artifact Registry Docker repository id (path segment in docker.pkg.dev URLs). GCP allows only lowercase letters, digits, and hyphens (no underscores). Cloud Run service name stays name_prefix-api."
   type        = string
-  default     = "digital_twin"
+  default     = "digital-twin"
 }
 
 variable "container_image" {

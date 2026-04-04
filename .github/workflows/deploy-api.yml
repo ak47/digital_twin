@@ -18,9 +18,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # REPO must match terraform variable artifact_registry_repository_id (default digital_twin).
+  # REPO must match terraform artifact_registry_repository_id (default digital-twin; underscores invalid in GCP).
   REGION: us-central1
-  REPO: digital_twin
+  REPO: digital-twin
   SERVICE: digital-twin-api
 
 jobs:
