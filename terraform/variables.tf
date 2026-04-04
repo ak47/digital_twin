@@ -16,6 +16,12 @@ variable "name_prefix" {
   default     = "digital-twin"
 }
 
+variable "artifact_registry_repository_id" {
+  description = "Artifact Registry Docker repository id (path segment in docker.pkg.dev URLs). Cloud Run service name stays name_prefix-api."
+  type        = string
+  default     = "digital_twin"
+}
+
 variable "container_image" {
   description = "Cloud Run container image (Artifact Registry after first build, or placeholder for bootstrap)."
   type        = string
@@ -45,5 +51,16 @@ variable "rag_engine_tier" {
   validation {
     condition     = contains(["BASIC", "SCALED"], var.rag_engine_tier)
     error_message = "rag_engine_tier must be BASIC or SCALED."
+  }
+}
+
+variable "github_repository" {
+  description = "GitHub repo allowed to deploy via OIDC (owner/name), e.g. ak47/digital_twin. Empty skips WIF + deployer SA (use manual secrets)."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.github_repository == "" || can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "github_repository must be empty or owner/name (alphanumeric, dots, hyphens, underscores)."
   }
 }

@@ -6,6 +6,8 @@ locals {
     "aiplatform.googleapis.com",
     "secretmanager.googleapis.com",
     "iamcredentials.googleapis.com",
+    "iam.googleapis.com",
+    "sts.googleapis.com",     # Workload Identity Federation (GitHub Actions OIDC)
     "compute.googleapis.com", # Cloud Run dependencies
   ])
 }

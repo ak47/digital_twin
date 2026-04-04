@@ -37,7 +37,7 @@ cd /path/to/digital_twin
 
 export PROJECT_ID="YOUR_GCP_PROJECT_ID"
 export REGION="us-central1"
-export REPO="digital-twin-api"
+export REPO="digital_twin"
 export TAG="v1"
 export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/api:${TAG}"
 
@@ -56,7 +56,7 @@ cd /path/to/digital_twin
 
 export PROJECT_ID="YOUR_GCP_PROJECT_ID"
 export REGION="us-central1"
-export REPO="digital-twin-api"
+export REPO="digital_twin"
 export TAG="v1"
 export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/api:${TAG}"
 
@@ -103,7 +103,7 @@ docker buildx create --use 2>/dev/null || true
 ```bash
 export PROJECT_ID="your-gcp-project-id"
 export REGION="us-central1"
-export REPO="digital-twin-api"
+export REPO="digital_twin"
 export TAG="v1"   # or $(git rev-parse --short HEAD)
 
 export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/api:${TAG}"
@@ -305,9 +305,11 @@ You must configure the repo (or org) with **Workload Identity Federation** so Gi
 
 | Name | Type | Purpose |
 |------|------|---------|
-| `GCP_PROJECT_ID` | Variable or secret | Target project |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Secret | WIF provider resource name |
-| `GCP_SERVICE_ACCOUNT_EMAIL` | Secret | Deployer SA email |
+| `GCP_PROJECT_ID` | **Repository secret** | Target project ID (`google-github-actions/auth` and deploy steps read `secrets.*` only) |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | **Repository secret** | Full WIF provider resource name |
+| `GCP_SERVICE_ACCOUNT_EMAIL` | **Repository secret** | Deployer service account email |
+
+If you put the project ID under **Variables** instead of **Secrets**, the workflow will see an empty value and **`auth@v2` fails** with *“must specify exactly one of workload_identity_provider or credentials_json”*. Use **Secrets** for all three, or change the workflow to use `vars.GCP_PROJECT_ID` for the project id only.
 
 ### Workload Identity: “attribute condition must reference one of the provider's claims”
 
@@ -360,7 +362,7 @@ Official reference: [Workload Identity Federation — attribute conditions](http
 
 The deployer service account needs at least:
 
-- **Artifact Registry:** `roles/artifactregistry.writer` on repo `digital-twin-api`
+- **Artifact Registry:** `roles/artifactregistry.writer` on repo `digital_twin` (or project-level writer)
 - **Cloud Run:** `roles/run.admin` (or narrower if you tighten later)
 - **IAM:** `roles/iam.serviceAccountUser` on **`digital-twin-api@<PROJECT>.iam.gserviceaccount.com`** (runtime SA) if required by your org policy
 

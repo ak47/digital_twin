@@ -18,9 +18,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Match terraform/variables.tf default; override here if you change region in TF.
+  # REPO must match terraform variable artifact_registry_repository_id (default digital_twin).
   REGION: us-central1
-  REPO: digital-twin-api
+  REPO: digital_twin
   SERVICE: digital-twin-api
 
 jobs:
@@ -32,6 +32,30 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # google-github-actions/auth@v2 requires a non-empty workload_identity_provider.
+      # If any of these are unset, the action fails opaquely — fail here with a clear message.
+      - name: Check GCP Action secrets
+        env:
+          GCP_WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SA_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set +x
+          missing=""
+          [ -z "${GCP_WIF_PROVIDER}" ] && missing="${missing} GCP_WORKLOAD_IDENTITY_PROVIDER"
+          [ -z "${GCP_SA_EMAIL}" ] && missing="${missing} GCP_SERVICE_ACCOUNT_EMAIL"
+          [ -z "${GCP_PROJECT_ID}" ] && missing="${missing} GCP_PROJECT_ID"
+          if [ -n "${missing}" ]; then
+            echo "::error::Missing or empty repository secrets:${missing}"
+            echo ""
+            echo "Add them under: Settings → Secrets and variables → Actions → New repository secret"
+            echo "Names must match exactly (case-sensitive). See docs/WORKING.md."
+            echo ""
+            echo "If you added Values under Variables instead of Secrets, create Secrets with the same names — auth@v2 reads secrets.* only."
+            echo "Fork PRs and some automation (e.g. Dependabot) do not receive secrets; push to main on this repo or use workflow_dispatch after secrets exist."
+            exit 1
+          fi
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2

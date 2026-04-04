@@ -35,3 +35,13 @@ output "cloud_run_uri" {
   description = "HTTPS URL for the API (map digital_twin.no-ego.net here)."
   value       = google_cloud_run_v2_service.api.uri
 }
+
+output "github_actions_wif_provider" {
+  description = "Repository secret GCP_WORKLOAD_IDENTITY_PROVIDER (full resource name). Null if github_repository is unset."
+  value       = one(google_iam_workload_identity_pool_provider.github[*].name)
+}
+
+output "github_actions_deployer_email" {
+  description = "Repository secret GCP_SERVICE_ACCOUNT_EMAIL. Null if github_repository is unset."
+  value       = one(google_service_account.github_deploy[*].email)
+}

@@ -12,7 +12,7 @@ terraform apply
 After building and pushing your API image to Artifact Registry:
 
 ```bash
-terraform apply -var="container_image=us-central1-docker.pkg.dev/YOUR_PROJECT_ID/digital-twin-api/api:TAG"
+terraform apply -var="container_image=us-central1-docker.pkg.dev/YOUR_PROJECT_ID/digital_twin/api:TAG"
 ```
 
 See repository root `README.md` for full context.
