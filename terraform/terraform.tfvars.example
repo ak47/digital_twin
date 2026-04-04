@@ -1,0 +1,10 @@
+# Copy to `terraform.tfvars` (gitignored) — do not commit.
+#
+# project_id = "your-gcp-project-id"
+# region     = "us-central1"
+#
+# Optional overrides:
+# name_prefix            = "digital-twin"
+# rag_engine_tier        = "BASIC"
+# session_retention_days = 3
+# cors_allowed_origins   = ["https://no-ego.net", "https://www.no-ego.net"]

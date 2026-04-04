@@ -1,0 +1,33 @@
+# Local secrets — never commit
+.env
+.env.*
+!.env.example
+terraform.tfvars
+terraform.tfvars.json
+*.auto.tfvars
+!terraform.tfvars.example
+
+# Terraform
+.terraform/
+# Commit .terraform.lock.hcl for reproducible provider versions.
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
