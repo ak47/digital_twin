@@ -34,6 +34,12 @@ variable "gemini_model" {
   default     = "gemini-2.5-flash"
 }
 
+variable "rag_corpus_resource_name" {
+  description = "Full Vertex RAG corpus resource name for retrieval (empty disables RAG in the app). Example: projects/ID/locations/us-central1/ragCorpora/UUID"
+  type        = string
+  default     = ""
+}
+
 variable "cors_allowed_origins" {
   description = "Origins allowed by the Cloud Run API (mirrors no-ego.net site)."
   type        = list(string)

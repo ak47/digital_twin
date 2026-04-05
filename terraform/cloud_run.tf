@@ -55,6 +55,14 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "GEMINI_MODEL"
         value = var.gemini_model
       }
+
+      dynamic "env" {
+        for_each = var.rag_corpus_resource_name != "" ? [1] : []
+        content {
+          name  = "RAG_CORPUS_RESOURCE"
+          value = var.rag_corpus_resource_name
+        }
+      }
     }
   }
 

@@ -27,6 +27,11 @@ __pycache__/
 dist/
 *.egg-info/
 
+# Personal narrative / LinkedIn export — ingest via GCS + Vertex RAG, do not commit
+src/digital_twin/prompts/knowledge.txt
+src/digital_twin/prompts/knowledge.md
+src/digital_twin/prompts/Profile.pdf
+
 # OS / IDE
 .DS_Store
 .idea/

@@ -8,3 +8,4 @@
 # rag_engine_tier        = "BASIC"
 # session_retention_days = 3
 # cors_allowed_origins   = ["https://no-ego.net", "https://www.no-ego.net"]
+# rag_corpus_resource_name = "projects/your-project/locations/us-central1/ragCorpora/your-corpus-id"

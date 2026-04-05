@@ -1,3 +1,3 @@
-The API’s default **system prompt** is versioned at **`src/digital_twin/prompts/system.md`** (bundled in the Docker image).
+The API’s default **system prompt** is **`src/digital_twin/prompts/system.md`** (bundled in the Docker image).
 
-Use this folder for **extra** corpus notes or drafts if you like; RAG source documents will live under **`corpus/`**.
+**Biography / LinkedIn / long narrative:** do **not** commit those here — upload to the **Terraform corpus GCS bucket** and **import into Vertex RAG** (see **`docs/WORKING.md`**). Local `knowledge.txt` / `Profile.pdf` paths are **gitignored** for convenience when copying to `gsutil`.

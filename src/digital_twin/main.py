@@ -4,7 +4,10 @@ FastAPI entrypoint for Cloud Run.
 Env (injected by Terraform / Cloud Run):
   PORT                    — Cloud Run sets this (default 8080 locally)
   CORS_ALLOWED_ORIGINS    — comma-separated, e.g. https://no-ego.net,https://www.no-ego.net
-  GCS_CORPUS_BUCKET       — reserved for RAG (unused in this module yet)
+  GCS_CORPUS_BUCKET       — corpus bucket (upload sources; import into a RAG corpus separately)
+  RAG_CORPUS_RESOURCE     — full ragCorpora/... name for Vertex retrieval_query (set for production Q&A over your docs)
+  RAG_TOP_K               — optional retrieval count (default 8)
+  RAG_VECTOR_DISTANCE_THRESHOLD — optional; if set, passed to RAG filter
   GCS_SESSIONS_BUCKET     — session JSON blobs (optional; in-memory if unset)
   GCP_PROJECT_ID, GCP_REGION — Vertex Gemini
   GEMINI_MODEL            — optional, default gemini-2.5-flash (Vertex)

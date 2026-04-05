@@ -10,6 +10,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from digital_twin import rag_vertex
+
 logger = logging.getLogger(__name__)
 
 # Default tracks Vertex “latest stable” Flash; override with GEMINI_MODEL if needed.
@@ -46,17 +48,25 @@ def _resolve_gcp_project() -> str:
     return ""
 
 
+def _prompts_dir() -> Path:
+    env_path = os.environ.get("SYSTEM_PROMPT_PATH", "").strip()
+    if env_path:
+        return Path(env_path).resolve().parent
+    return Path(__file__).resolve().parent / "prompts"
+
+
 def _load_system_instruction() -> str:
     env_path = os.environ.get("SYSTEM_PROMPT_PATH", "").strip()
-    path = Path(env_path) if env_path else Path(__file__).resolve().parent / "prompts" / "system.md"
+    path = Path(env_path) if env_path else _prompts_dir() / "system.md"
     try:
         with path.open(encoding="utf-8") as f:
-            return f.read().strip()
+            base = f.read().strip()
     except OSError:
-        return (
+        base = (
             "You are a third-person narrator answering questions about Andrew’s "
             "professional background. Be accurate and concise."
         )
+    return base
 
 
 def stream_reply(
@@ -77,6 +87,12 @@ def stream_reply(
             f"You asked: {user_text[:500]!r}"
         )
         return
+
+    corpus = os.environ.get("RAG_CORPUS_RESOURCE", "").strip()
+    if corpus:
+        rag_block = rag_vertex.fetch_rag_context(project, region, corpus, user_text)
+        if rag_block:
+            system = f"{system}\n\n---\n\n{rag_block}"
 
     try:
         from google import genai
