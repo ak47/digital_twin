@@ -28,8 +28,13 @@ output "cloud_run_service_account" {
 }
 
 output "rag_engine_config_name" {
-  value       = google_vertex_ai_rag_engine_config.main.name
-  description = "RAG Engine config resource name (managed DB tier provisioned)."
+  value       = google_vertex_ai_rag_engine_config.main[var.region].name
+  description = "RAG Engine config in var.region (primary regional plane for this stack)."
+}
+
+output "rag_engine_config_names_by_region" {
+  value       = { for r, cfg in google_vertex_ai_rag_engine_config.main : r => cfg.name }
+  description = "All provisioned RAG Engine configs (includes rag_corpus_ingest_region when set)."
 }
 
 output "cors_allowed_origins" {

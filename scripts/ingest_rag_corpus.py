@@ -10,12 +10,13 @@ Example:
   cd /path/to/digital_twin
   python3 scripts/ingest_rag_corpus.py \\
     --project-id digital-twin-492318 \\
-    --region europe-west4 \\
     --files ./knowledge.txt ./Profile.pdf
 
-Note: RAG Engine in us-central1 (and us-east1 / us-east4) is allowlist-only for many new
-projects. Default --region is europe-west4 (GA). Gemini can stay in us-central1; the API
-reads the corpus region from RAG_CORPUS_RESOURCE for retrieval.
+Default --region matches Terraform (us-central1). If RAG create/import is denied there, use a
+GA RAG region (e.g. europe-west4) and set Terraform rag_corpus_ingest_region to the same value.
+
+If rag.import_files fails with 500 after upload: terraform apply (RAG Engine in --region + corpus
+bucket IAM for the Vertex AI Service Agent); see terraform/README.md → RAG.
 """
 from __future__ import annotations
 
@@ -23,7 +24,10 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+from google.api_core import exceptions as gcp_exceptions
 
 
 def _terraform_corpus_bucket(repo_root: Path) -> str:
@@ -80,11 +84,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--region",
-        default="europe-west4",
+        default="us-central1",
         help=(
-            "Vertex location for RAG corpus create/import. "
-            "us-central1 / us-east1 / us-east4 are allowlist-only for many new projects; "
-            "try europe-west4 or europe-west3. GCS bucket can stay in any region."
+            "Vertex location for RAG corpus create/import (must match RAG Engine region in Terraform). "
+            "If us-central1 is not available for RAG in your project, use europe-west4 (or europe-west3) "
+            "and set Terraform variable rag_corpus_ingest_region to that region."
         ),
     )
     parser.add_argument(
@@ -113,6 +117,20 @@ def main() -> None:
         "--skip-upload",
         action="store_true",
         help="Skip GCS upload; --files are ignored. Import gs://bucket/prefix/ only.",
+    )
+    parser.add_argument(
+        "--import-result-sink",
+        default="",
+        help=(
+            "Optional gs://bucket/path/unique.ndjson (object must not exist). "
+            "Vertex writes per-file import status — useful when debugging failed imports."
+        ),
+    )
+    parser.add_argument(
+        "--import-retries",
+        type=int,
+        default=3,
+        help="Retries for rag.import_files on 5xx (default 3).",
     )
     args = parser.parse_args()
 
@@ -150,18 +168,41 @@ def main() -> None:
         ),
     )
 
-    rag.import_files(
-        rag_corpus.name,
-        import_paths,
-        transformation_config=rag.TransformationConfig(
-            chunking_config=rag.ChunkingConfig(
-                chunk_size=512,
-                chunk_overlap=100,
-            ),
-        ),
-        max_embedding_requests_per_min=1000,
-        timeout=3600,
-    )
+    sink = args.import_result_sink.strip()
+    import_kw: dict = {}
+    if sink:
+        import_kw["import_result_sink"] = sink
+
+    for attempt in range(max(1, args.import_retries)):
+        if attempt:
+            delay = min(60, 5 * (2 ** (attempt - 1)))
+            print(f"Import retry {attempt + 1}/{args.import_retries} after {delay}s...", file=sys.stderr)
+            time.sleep(delay)
+        try:
+            rag.import_files(
+                rag_corpus.name,
+                import_paths,
+                transformation_config=rag.TransformationConfig(
+                    chunking_config=rag.ChunkingConfig(
+                        chunk_size=512,
+                        chunk_overlap=100,
+                    ),
+                ),
+                max_embedding_requests_per_min=1000,
+                timeout=3600,
+                **import_kw,
+            )
+            break
+        except (gcp_exceptions.InternalServerError, gcp_exceptions.ServiceUnavailable):
+            if attempt >= args.import_retries - 1:
+                tail = f"\nPer-file import details: {sink}" if sink else ""
+                print(
+                    f"RAG import failed after {args.import_retries} attempt(s).{tail}\n"
+                    "Fix: terraform apply (RAG Engine in --region + corpus bucket IAM for "
+                    "Vertex AI Service Agent). See terraform/README.md → RAG.",
+                    file=sys.stderr,
+                )
+                raise
 
     resource = rag_corpus.name
     print("")
@@ -171,7 +212,7 @@ def main() -> None:
     print("")
     print("Cloud Run / GitHub Actions variable RAG_CORPUS_RESOURCE: same string, no TF_VAR_ prefix.")
     print("")
-    print(f"(Corpus Vertex location: {args.region} — retrieval uses this; GCP_REGION can stay us-central1 for Gemini.)")
+    print(f"(Corpus Vertex location: {args.region} — retrieval uses this; Gemini uses GCP_REGION from the app.)")
     print("")
 
 

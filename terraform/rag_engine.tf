@@ -3,10 +3,18 @@
 # Terraform resources cover your exact flow; this keeps the durable RAG plane in IaC.
 #
 # Docs: https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/vertex_ai_rag_engine_config
+#
+# RAG corpora are regional: ingest must run in a region where this config exists. When Cloud Run
+# stays in var.region but ingest uses another GA region (e.g. europe-west4), include both here.
+
+locals {
+  rag_engine_regions = toset(compact(distinct([var.region, var.rag_corpus_ingest_region])))
+}
 
 resource "google_vertex_ai_rag_engine_config" "main" {
-  project = var.project_id
-  region  = var.region
+  for_each = local.rag_engine_regions
+  project  = var.project_id
+  region   = each.key
 
   rag_managed_db_config {
     dynamic "basic" {
@@ -21,3 +29,4 @@ resource "google_vertex_ai_rag_engine_config" "main" {
 
   depends_on = [google_project_service.required]
 }
+

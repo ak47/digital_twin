@@ -31,7 +31,7 @@ An old pool id may exist in GCP but not in Terraform state. This stack now uses 
 
 ### RAG: upload `knowledge.txt` / `Profile.pdf` and ingest
 
-Terraform creates the **corpus GCS bucket** and **RAG engine config** only. You still **upload files** and **create a RAG corpus + import** (Vertex does not auto-read the bucket).
+Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.region`** (default `us-central1`), optionally a **second** config in **`rag_corpus_ingest_region`** if you ingest in another GA RAG region, and grants the **Vertex AI Service Agent** (`service-…@gcp-sa-aiplatform.iam.gserviceaccount.com`) **`storage.objectViewer`** on the corpus bucket so Vertex can read `gs://` sources. You still **upload files** and **create a RAG corpus + import** (Vertex does not auto-read the bucket).
 
 1. **Bucket name** (after `terraform apply`):
 
@@ -48,13 +48,12 @@ Terraform creates the **corpus GCS bucket** and **RAG engine config** only. You 
 
    python3 scripts/ingest_rag_corpus.py \
      --project-id YOUR_PROJECT_ID \
-     --region europe-west4 \
      --files ./knowledge.txt ./Profile.pdf
    ```
 
    Omit `--bucket` to pull the bucket name from `terraform output corpus_bucket_name`. Objects land under `gs://<bucket>/rag-sources/`.
 
-   **Region:** RAG corpus create/import defaults to **`europe-west4`** because **`us-central1` / `us-east1` / `us-east4` are allowlist-only** for many new projects ([supported regions](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-overview#supported-regions)). Your Terraform bucket and Cloud Run can stay **`us-central1`**; the app uses the **location inside `RAG_CORPUS_RESOURCE`** for retrieval. Gemini stays on **`GCP_REGION`** (usually `us-central1`).
+   **Region:** Defaults to **`us-central1`** (same as Terraform `var.region`). If your project cannot use RAG in `us-central1` yet, pick a [supported RAG region](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-overview#supported-regions) (often `europe-west4`), set **`rag_corpus_ingest_region`** in tfvars to that region, **`terraform apply`**, then pass **`--region`** to the script to match. The app reads the corpus location from **`RAG_CORPUS_RESOURCE`**; Gemini still uses **`GCP_REGION`** on Cloud Run.
 
 3. **Wire Cloud Run** with the printed resource name:
 
@@ -63,6 +62,16 @@ Terraform creates the **corpus GCS bucket** and **RAG engine config** only. You 
    - Then `terraform apply` and/or push a deploy so the revision gets the env var.
 
 **Manual alternative:** `gsutil cp knowledge.txt Profile.pdf gs://$(terraform output -raw corpus_bucket_name)/rag-sources/` then create/import a corpus in the [Vertex RAG console](https://console.cloud.google.com/vertex-ai/studio) or via the [RAG API](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/rag-api-v1).
+
+If `import_files` fails with **500 Internal error** after a successful upload, run **`terraform apply`** so RAG Engine and corpus bucket IAM are present, then retry ingest.
+
+**State move (upgrading an existing stack):** RAG Engine is now keyed by region. If state still has the old address `google_vertex_ai_rag_engine_config.main` (no `for_each`), run once before apply (replace `us-central1` with your `var.region`):
+
+```bash
+terraform state mv \
+  'google_vertex_ai_rag_engine_config.main' \
+  'google_vertex_ai_rag_engine_config.main["us-central1"]'
+```
 
 ### New image for Cloud Run
 

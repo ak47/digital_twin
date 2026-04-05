@@ -72,6 +72,17 @@ variable "rag_engine_tier" {
   }
 }
 
+variable "rag_corpus_ingest_region" {
+  description = <<-EOT
+    Optional second Vertex region for RAG Engine managed DB (e.g. europe-west3/4) when you ingest
+    there but keep Cloud Run in var.region. Default "" = only var.region (typical: us-central1 for all).
+    Some new projects cannot use RAG in us-central1 until allowlisted; then set this to a GA RAG region
+    and pass the same value to scripts/ingest_rag_corpus.py --region.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "github_repository" {
   description = "GitHub repo allowed to deploy via OIDC (owner/name). This project uses ak47/digital_twin. Set to \"\" to skip WIF + deployer SA (forks / JSON-key deploy only)."
   type        = string
