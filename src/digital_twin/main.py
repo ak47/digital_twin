@@ -21,7 +21,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from digital_twin import llm, rate_limit, session_store
 
@@ -53,6 +53,11 @@ if _origins:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.head("/health")
+def health_head() -> Response:
+    return Response(status_code=200)
 
 
 @app.get("/")
