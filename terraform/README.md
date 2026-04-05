@@ -154,4 +154,19 @@ After building and pushing to Artifact Registry:
 terraform apply -var="container_image=us-central1-docker.pkg.dev/YOUR_PROJECT_ID/digital-twin/api:TAG"
 ```
 
-See repository root `README.md` for broader context.
+### Idle session digest (Cloud Run Job + Scheduler)
+
+**`terraform/digest_job.tf`** provisions an optional **`${name_prefix}-session-digest`** Cloud Run Job and a **Cloud Scheduler** HTTP target that calls **`:run`** on that job. The job uses the same **`container_image`** as the API and runs **`python -m digital_twin.run_session_digest`**.
+
+In **`terraform.tfvars`** (or `TF_VAR_*`):
+
+- **`session_digest_enabled`** — `true` to create job + scheduler + IAM
+- **`session_digest_gmail_secret_id`** — Secret Manager **secret id** (short name) with the Gmail SA JSON
+- **`session_digest_delegated_user`** — Workspace sender (**`GMAIL_DELEGATED_USER`**)
+- **`session_digest_email_to`** — comma-separated recipients (**`RESUME_BOT_DIGEST_EMAIL_TO`**)
+
+Optional: **`session_digest_schedule`** (cron, default `*/15 * * * *`), **`session_digest_scheduler_timezone`**, **`session_digest_idle_minutes`**, **`session_digest_display_timezone`**.
+
+After apply, run **`./scripts/print-github-actions-secrets.sh`** and set GitHub repository **Variable** **`SESSION_DIGEST_JOB_NAME`** to **`terraform output -raw session_digest_job_name`** so **`.github/workflows/deploy-api.yml`** updates the job image on every deploy.
+
+See repository root **`README.md`** (*Idle session digest*) for Workspace / domain-wide delegation and broader context.
