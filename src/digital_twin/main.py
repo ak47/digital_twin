@@ -54,7 +54,9 @@ def _cors_origins() -> list[str]:
     if not raw:
         base = list(_DEFAULT_CORS_ORIGINS)
     else:
-        base = [o.strip() for o in raw.split(",") if o.strip()]
+        base = [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
+    if not base:
+        base = list(_DEFAULT_CORS_ORIGINS)
     seen = set(base)
     for o in _LOCAL_DEV_ORIGINS:
         if o not in seen:
@@ -63,6 +65,11 @@ def _cors_origins() -> list[str]:
     return base
 
 
+# Browsers send https://www.no-ego.net (no trailing slash). Terraform/CI must pass comma-separated
+# origins; gcloud --update-env-vars breaks on commas unless a custom delimiter is used (see deploy).
+# Regex covers apex + subdomains on no-ego.net so www works even if env is mis-set.
+_NO_EGO_ORIGIN_RE = r"^https://([a-z0-9-]+\.)*no-ego\.net$"
+
 app = FastAPI(title="digital-twin-api", version="0.2.0")
 
 _origins = _cors_origins()
@@ -70,6 +77,7 @@ if _origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_origins,
+        allow_origin_regex=_NO_EGO_ORIGIN_RE,
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],

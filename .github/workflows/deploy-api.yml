@@ -85,15 +85,21 @@ jobs:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           # Optional: same value as TF_VAR_rag_corpus_resource_name in local .env (Settings → Variables).
           RAG_CORPUS_RESOURCE: ${{ vars.RAG_CORPUS_RESOURCE }}
+          # Optional override; default matches terraform/variables.tf (comma in value → use ^;^ below).
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
         run: |
-          # Vertex needs project/region on the revision. Append RAG_CORPUS_RESOURCE only if set (value has no commas).
-          ENV_VARS="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION}"
+          set -eu
+          # Default gcloud --update-env-vars splits on commas between KEY=value pairs, so
+          # CORS_ALLOWED_ORIGINS=https://a,https://b cannot use the comma form. Custom delimiter ^;^
+          # keeps one env value with commas inside.
+          CORS="${CORS_ALLOWED_ORIGINS:-https://no-ego.net,https://www.no-ego.net}"
+          EXTRA=""
           if [ -n "${RAG_CORPUS_RESOURCE}" ]; then
-            ENV_VARS="${ENV_VARS},RAG_CORPUS_RESOURCE=${RAG_CORPUS_RESOURCE}"
+            EXTRA=";RAG_CORPUS_RESOURCE=${RAG_CORPUS_RESOURCE}"
           fi
           gcloud run services update "${SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${IMAGE}" \
-            --update-env-vars="${ENV_VARS}" \
+            --update-env-vars "^;^GCP_PROJECT_ID=${PROJECT_ID};GCP_REGION=${REGION};CORS_ALLOWED_ORIGINS=${CORS}${EXTRA}" \
             --quiet
