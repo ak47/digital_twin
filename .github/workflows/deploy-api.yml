@@ -93,6 +93,11 @@ jobs:
           GMAIL_SECRET_NAME: ${{ vars.GMAIL_SECRET_NAME }}
         run: |
           set -eu
+          # Trim pasted GitHub Variables (trailing space/newline breaks gcloud secret names).
+          _trim() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          GMAIL_SECRET_NAME="$(_trim "${GMAIL_SECRET_NAME:-}")"
+          GMAIL_DELEGATED_USER="$(_trim "${GMAIL_DELEGATED_USER:-}")"
+          RESUME_BOT_DIGEST_EMAIL_TO="$(_trim "${RESUME_BOT_DIGEST_EMAIL_TO:-}")"
           # Default gcloud --update-env-vars splits on commas between KEY=value pairs, so
           # CORS_ALLOWED_ORIGINS=https://a,https://b cannot use the comma form. Custom delimiter ^;^
           # keeps one env value with commas inside.
@@ -102,9 +107,9 @@ jobs:
             EXTRA=";RAG_CORPUS_RESOURCE=${RAG_CORPUS_RESOURCE}"
           fi
           SECRET_ARGS=()
-          if [ -n "${RESUME_BOT_DIGEST_EMAIL_TO:-}" ]; then
+          if [ -n "${RESUME_BOT_DIGEST_EMAIL_TO}" ]; then
             EXTRA="${EXTRA};RESUME_BOT_DIGEST_EMAIL_TO=${RESUME_BOT_DIGEST_EMAIL_TO}"
-            if [ -n "${GMAIL_SECRET_NAME:-}" ] && [ -n "${GMAIL_DELEGATED_USER:-}" ]; then
+            if [ -n "${GMAIL_SECRET_NAME}" ] && [ -n "${GMAIL_DELEGATED_USER}" ]; then
               EXTRA="${EXTRA};GMAIL_DELEGATED_USER=${GMAIL_DELEGATED_USER}"
               SECRET_ARGS=(--set-secrets="GMAIL_SERVICE_ACCOUNT_JSON=${GMAIL_SECRET_NAME}:latest")
             fi

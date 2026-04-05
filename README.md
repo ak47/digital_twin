@@ -106,6 +106,47 @@ Terraform may still reference a placeholder image until you push your image and 
 
 **Tests:** `pip install ".[dev]" && pytest`
 
+## Idle session digest (email transcript)
+
+When **GCS sessions** are enabled, you can get a **plain-text attachment** of each chat after **no activity for 1 hour** (configurable). The API scans GCS periodically in the background.
+
+**Email provider:** **`GMAIL_DELEGATED_USER`** plus **`GMAIL_SERVICE_ACCOUNT_JSON`** (or a Secret Manager–backed env on Cloud Run). Mail is sent with the **Gmail API** as that Workspace user.
+
+Subject line: **`resume bot chat YYYY-MM-DD HH:MM PST`** (or **PDT**) — **US Pacific** by default (`RESUME_BOT_DIGEST_TIMEZONE`, default `America/Los_Angeles`). Body is short; the **thread is in the `.txt` attachment**.
+
+### Google Workspace (no-ego.net)
+
+1. **Workspace:** Create a mailbox to send from, e.g. **`resume-bot@no-ego.net`** (or use an existing user).
+2. **GCP (same project as Cloud Run):** Enable **[Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com)**.
+3. **Service account:** Create one. In GCP → **IAM & Admin** → **Service accounts** → open the SA → **Edit** → enable **Domain-wide delegation** (Google Workspace), save. Download a **JSON key**. You need the **numeric Client ID** (shown in the console or as `client_id` in the JSON).
+4. **Workspace Admin** (admin.google.com) → **Security** → **Access and data control** → **API controls** → **Domain-wide delegation** → **Manage domain-wide delegation** → **Add new**:
+   - Client ID: the SA’s numeric `client_id`
+   - OAuth scopes: `https://www.googleapis.com/auth/gmail.send`
+5. **Secret Manager:** Store the JSON (once per project):
+
+   ```bash
+   gcloud secrets create gmail-digest-sa --data-file=./your-sa.json
+   gcloud secrets add-iam-policy-binding gmail-digest-sa \
+     --member="serviceAccount:YOUR_CLOUD_RUN_RUNTIME_SA@PROJECT.iam.gserviceaccount.com" \
+     --role="roles/secretmanager.secretAccessor"
+   ```
+
+   Use the **Cloud Run service account** from Terraform output `cloud_run_service_account` (or the SA shown on the Cloud Run service).
+
+6. **GitHub Actions — Variables:** `RESUME_BOT_DIGEST_EMAIL_TO`, **`GMAIL_DELEGATED_USER`** (e.g. `resume-bot@no-ego.net`), **`GMAIL_SECRET_NAME`** — the Secret Manager **secret id** you chose at creation (e.g. `gmail-digest-sa`). **Not** your GCP project id, **not** the numeric project number (e.g. not `597516825296`), **not** the full `projects/.../secrets/...` path.
+
+Deploy injects **`GMAIL_DELEGATED_USER`** and mounts the secret as env **`GMAIL_SERVICE_ACCOUNT_JSON`**.
+
+**Local dev:** `export GMAIL_SERVICE_ACCOUNT_KEY_FILE=/path/to/sa.json` and `GMAIL_DELEGATED_USER=resume-bot@no-ego.net`.
+
+Omit digest variables/secrets to leave the feature off.
+
+### Optional env
+
+`RESUME_BOT_DIGEST_IDLE_MINUTES` (default `60`), `RESUME_BOT_DIGEST_SCAN_INTERVAL_SECONDS` (default `300`), `RESUME_BOT_DIGEST_TIMEZONE`.
+
+**Note:** With **multiple Cloud Run instances**, duplicate digests are unlikely but possible; use **`max_instance_count = 1`** if you need a hard guarantee.
+
 ## Docs
 
 Alignment and product decisions: **ak47.github.io** → `docs/resume-bot-gcp-github-pages-plan.md`.

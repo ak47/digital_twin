@@ -21,6 +21,8 @@ flowchart TB
             RAGCfg["RAG engine config\nper region\n(BASIC default)"]
             Corpus["RagCorpus\n(imported GCS URIs)"]
         end
+        SM["Secret Manager\noptional: SA JSON\nfor Gmail digest"]
+        Gmail["Gmail API\nsend as delegated\nWorkspace user"]
     end
 
     subgraph github["GitHub Actions"]
@@ -44,13 +46,17 @@ flowchart TB
     CR -->|generate_content_stream\nGCP_REGION| Vertex
     CR -->|retrieval_query\nregion from corpus resource name| Corpus
     CR -->|read/write when bucket set| GCS_S
+    CR -.->|optional: list blobs,\nconditional send + CAS update| GCS_S
+    CR -.->|when digest enabled:\nGMAIL_SERVICE_ACCOUNT_JSON| SM
+    CR -.->|domain-wide delegation| Gmail
     IngestPy --> GCS_C
     IngestPy --> Corpus
 ```
 
 **Notes**
 
-- **Sessions**: If `GCS_SESSIONS_BUCKET` is unset, history stays in **process memory** (lost on recycle/scale-out).
+- **Sessions**: If `GCS_SESSIONS_BUCKET` is unset, history stays in **process memory** (lost on recycle/scale-out). Session JSON in GCS includes **`last_activity_at`** (set on each save) for digest eligibility.
+- **Idle session digest (optional)**: When **`GCS_SESSIONS_BUCKET`**, **`RESUME_BOT_DIGEST_EMAIL_TO`**, and **Gmail** credentials are all configured, the app starts a **background loop** (`session_digest.digest_loop`) on startup. It periodically scans session blobs under the sessions prefix; after **`RESUME_BOT_DIGEST_IDLE_MINUTES`** (default 60) without activity, it emails a **plain-text transcript attachment** via **Gmail API** using a **service account** with **domain-wide delegation** as **`GMAIL_DELEGATED_USER`**. Successful sends set **`idle_digest_sent_at`** on the blob with **generation-match (CAS)** to reduce duplicate sends. **Requires GCS** (not in-memory sessions). With **multiple Cloud Run instances**, rare duplicate digests are possible unless you cap instances (see **`README.md`**).
 - **RAG is optional**: If `RAG_CORPUS_RESOURCE` is unset, answers use **`system.md` only** (no retrieval). When set, `rag_vertex.fetch_rag_context` runs **`vertexai.rag.retrieval_query`**, formats chunks, and **`llm.stream_reply`** appends them to the system instruction before calling Gemini.
 - **Two regions**: **Gemini** uses **`GCP_REGION`** (default `us-central1` on Cloud Run). **Retrieval** initializes Vertex in the **location embedded in `RAG_CORPUS_RESOURCE`** (e.g. `.../locations/europe-west4/ragCorpora/...` when using a backup ingest region). See `rag_vertex.py` and `terraform/README.md` (RAG backup region).
 - **Tuning**: **`RAG_TOP_K`**, optional **`RAG_VECTOR_DISTANCE_THRESHOLD`** (see `main.py` / `.env.example`).
@@ -78,7 +84,7 @@ flowchart LR
     Auth --> Build --> PushImg --> Upd
 ```
 
-On deploy, **environment variables** are applied with a **custom delimiter** (`^;^`) so **`CORS_ALLOWED_ORIGINS`** can contain commas. Optional repository **Variables** passed into that step include **`RAG_CORPUS_RESOURCE`** and **`CORS_ALLOWED_ORIGINS`** (see `.github/workflows/deploy-api.yml`).
+On deploy, **environment variables** are applied with a **custom delimiter** (`^;^`) so **`CORS_ALLOWED_ORIGINS`** can contain commas. Optional repository **Variables** include **`RAG_CORPUS_RESOURCE`**, **`CORS_ALLOWED_ORIGINS`**, and for the digest feature **`RESUME_BOT_DIGEST_EMAIL_TO`**, **`GMAIL_DELEGATED_USER`**, **`GMAIL_SECRET_NAME`** (Secret Manager **secret id**). When Gmail variables are set alongside **`RESUME_BOT_DIGEST_EMAIL_TO`**, the workflow adds **`--set-secrets=GMAIL_SERVICE_ACCOUNT_JSON=GMAIL_SECRET_NAME:latest`** so the runtime receives the SA JSON without putting it in plain env (see `.github/workflows/deploy-api.yml`).
 
 Secret names and copying Terraform outputs into GitHub are documented in **`terraform/README.md`** and helper **`scripts/print-github-actions-secrets.sh`**.
 
@@ -105,6 +111,50 @@ flowchart LR
 - **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Requires the same **secrets** as Deploy API plus repository **Variables** **`CORPUS_BUCKET_NAME`** and **`RAG_CORPUS_RESOURCE`**; optional **`RAG_INGEST_REGION`** (default **`europe-west4`** if not inferable). The checked-in step runs **`ingest_rag_corpus.py`** with **`--skip-upload`** (assumes objects already in the bucket); adjust **`--files`** in the workflow if you need different globs.
 - **Local full ingest**: **`pip install -e .`**, ADC (`gcloud auth application-default login`), then **`scripts/ingest_rag_corpus.py`** (can create corpus, upload, import, and optionally ensure RAG engine tier — see script docstring).
 
+## Idle session digest (email)
+
+Background feature in **`session_digest.py`**, started from FastAPI **`lifespan`** in **`main.py`** when **`session_digest.digest_feature_configured()`** is true.
+
+```mermaid
+flowchart TB
+    subgraph startup["App lifespan"]
+        L["FastAPI startup"]
+        C{"digest_feature_configured?"}
+        Loop["session_digest.digest_loop\nasync sleep + to_thread scan"]
+        L --> C
+        C -->|yes| Loop
+        C -->|no| Idle["no background task"]
+    end
+
+    subgraph scan["scan_and_send_idle_digests (per tick)"]
+        List["List GCS blobs\nprefix sessions/"]
+        Each["For each session JSON"]
+        Check["Idle since last_activity_at?\nnot already emailed for this activity?"]
+        Mail["_send_digest_email →\nGmail API users.messages.send"]
+        CAS["Rewrite JSON:\nidle_digest_sent_at +\nif_generation_match"]
+        List --> Each --> Check
+        Check -->|send| Mail --> CAS
+    end
+
+    Loop --> scan
+```
+
+**Configuration (all required to enable)**
+
+| Variable / secret | Role |
+|-------------------|------|
+| `GCS_SESSIONS_BUCKET` | Session persistence (digest does not run on in-memory-only mode). |
+| `RESUME_BOT_DIGEST_EMAIL_TO` | Comma-separated recipient inbox(es). |
+| `GMAIL_DELEGATED_USER` | Workspace user the SA impersonates (sender). |
+| `GMAIL_SERVICE_ACCOUNT_JSON` | SA key JSON (production: from Secret Manager via deploy **`--set-secrets`**). |
+| `GMAIL_SERVICE_ACCOUNT_KEY_FILE` | Local dev: path to SA JSON instead of inline env. |
+
+One of **`GMAIL_SERVICE_ACCOUNT_JSON`** or **`GMAIL_SERVICE_ACCOUNT_KEY_FILE`** must be available at runtime (with **`GMAIL_DELEGATED_USER`**).
+
+**Optional tuning**: `RESUME_BOT_DIGEST_IDLE_MINUTES` (default 60), `RESUME_BOT_DIGEST_SCAN_INTERVAL_SECONDS` (default 300), `RESUME_BOT_DIGEST_TIMEZONE` (subject/attachment display time, default `America/Los_Angeles`), `GCS_SESSIONS_PREFIX` (default `sessions`).
+
+**Runbook**: Workspace admin setup, Gmail API enablement, Secret Manager, and GitHub Variables are in **`README.md`** → *Idle session digest*.
+
 ## In-process architecture (API service)
 
 ```mermaid
@@ -114,10 +164,12 @@ flowchart TB
         H["GET/HEAD /health"]
         G["GET /api/chat\n(load history)"]
         P["POST /api/chat\n(SSE stream)"]
+        Life["lifespan:\noptional digest_loop task"]
     end
 
     RL["rate_limit\nper client IP\n(in-memory window)"]
     SS["session_store\nUUID sessions\nGCS or memory"]
+    Dig["session_digest\nGCS scan + Gmail"]
 
     subgraph llm_pipe["llm.stream_reply (llm.py)"]
         RAG["rag_vertex.fetch_rag_context\nretrieval_query →\nformatted block"]
@@ -125,6 +177,7 @@ flowchart TB
         RAG --> GEN
     end
 
+    Life -.->|if configured| Dig
     MW --> G
     MW --> P
     P --> RL
@@ -169,7 +222,8 @@ sequenceDiagram
 | `src/digital_twin/main.py` | HTTP API, SSE, env wiring |
 | `src/digital_twin/llm.py` | System prompt; optional RAG block; Vertex Gemini streaming |
 | `src/digital_twin/rag_vertex.py` | `vertexai.rag.retrieval_query` + chunk formatting |
-| `src/digital_twin/session_store.py` | Session JSON in GCS or memory |
+| `src/digital_twin/session_store.py` | Session JSON in GCS or memory; **`last_activity_at`** on save |
+| `src/digital_twin/session_digest.py` | Idle digest: GCS scan, Gmail send, **`idle_digest_sent_at`** + CAS |
 | `src/digital_twin/rate_limit.py` | Per-IP RPM limit |
 | `src/digital_twin/prompts/` | `system.md` (packaged in wheel) |
 | `rag-sources/` | Curated corpus files for upload / ingest (e.g. `knowledge.txt`) |
@@ -180,6 +234,6 @@ sequenceDiagram
 | `.github/workflows/deploy-api.yml` | Build/push image, update Cloud Run |
 | `.github/workflows/ingest-rag-corpus.yml` | Manual RAG re-import from bucket |
 
-Runtime dependencies include **`google-genai`** (Gemini) and **`google-cloud-aiplatform`** (Vertex RAG client used by `rag_vertex` / ingest script). See `pyproject.toml`.
+Runtime dependencies include **`google-genai`** (Gemini), **`google-cloud-aiplatform`** (Vertex RAG / ingest), **`google-api-python-client`** and **`google-auth`** (Gmail digest). See `pyproject.toml`.
 
 For day-to-day operations, secrets, and backlog items, see **`docs/WORKING.md`** and **`docs/REMAINING_WORK.md`**.
