@@ -4,8 +4,8 @@
 #
 # Docs: https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/vertex_ai_rag_engine_config
 #
-# RAG corpora are regional: ingest must run in a region where this config exists. If
-# rag_corpus_ingest_region is set, provision RAG Engine in both that region and var.region.
+# RAG corpora are regional: ingest must run in a region where this config exists.
+# rag_corpus_ingest_region adds a second config (backup when var.region RAG is allowlist-blocked).
 
 locals {
   rag_engine_regions = toset(compact(distinct([var.region, var.rag_corpus_ingest_region])))

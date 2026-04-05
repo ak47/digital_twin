@@ -12,8 +12,8 @@ Example:
     --project-id digital-twin-492318 \\
     --files ./knowledge.txt ./Profile.pdf
 
-Default --region is us-central1 (same as Terraform var.region). If corpus creation fails with an
-allowlist error, request RAG Engine access for your project from Google (see stderr message).
+Default --region is us-central1. If Google blocks RAG there, stderr describes a backup path
+(Terraform rag_corpus_ingest_region + ingest --region); see terraform/README.md → RAG backup.
 
 If rag.import_files fails with 500 after upload: terraform apply (RAG Engine + corpus bucket IAM);
 see terraform/README.md → RAG.
@@ -28,6 +28,11 @@ import time
 from pathlib import Path
 
 from google.api_core import exceptions as gcp_exceptions
+
+# When us-central1 RAG is allowlist-blocked, Google points you at other supported regions; this is
+# the usual GA choice for ingest. Cloud Run / Gemini can stay us-central1; retrieval uses the
+# region embedded in RAG_CORPUS_RESOURCE (see rag_vertex.py).
+BACKUP_RAG_REGION = "europe-west4"
 
 
 def _is_rag_region_allowlist_error(exc: BaseException) -> bool:
@@ -165,13 +170,28 @@ def main() -> None:
             publisher_model="publishers/google/models/text-embedding-005"
         )
     )
-    def _exit_rag_region_allowlist() -> None:
+    def _exit_rag_region_allowlist(attempted_region: str) -> None:
         print(
-            "RAG corpus creation was rejected for this Vertex region. Google may restrict RAG Engine "
-            "to allowlisted projects in this region.\n"
-            "\n"
-            "To proceed in us-central1, contact Google Cloud / the channel named in the API error "
-            "(e.g. vertex-ai-rag-engine-support@google.com) to request allowlisting for your project.\n",
+            f"RAG corpus creation was rejected in {attempted_region!r}. "
+            "Google restricts RAG Engine to allowlisted projects in some regions (often us-central1).\n",
+            file=sys.stderr,
+        )
+        if attempted_region.lower() != BACKUP_RAG_REGION.lower():
+            print(
+                "Backup plan (corpus + retrieval in another supported region; API/Gemini stay us-central1):\n"
+                f"  1) In terraform.tfvars: rag_corpus_ingest_region = \"{BACKUP_RAG_REGION}\"\n"
+                "  2) cd terraform && terraform apply\n"
+                f"  3) python3 scripts/ingest_rag_corpus.py --project-id YOUR_ID "
+                f'--region {BACKUP_RAG_REGION} --files "./rag-sources/knowledge.txt" "./rag-sources/Profile.pdf"\n'
+                "  4) Set rag_corpus_resource_name (Terraform) and RAG_CORPUS_RESOURCE (GitHub) to the "
+                "printed resource name, then terraform apply / deploy.\n"
+                "\n"
+                "Supported regions: https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-overview#supported-regions\n",
+                file=sys.stderr,
+            )
+        print(
+            "To use RAG in us-central1 instead, contact the channel in Google’s error "
+            "(e.g. vertex-ai-rag-engine-support@google.com) to request allowlisting.\n",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -185,12 +205,12 @@ def main() -> None:
         )
     except gcp_exceptions.InvalidArgument as e:
         if _is_rag_region_allowlist_error(e):
-            _exit_rag_region_allowlist()
+            _exit_rag_region_allowlist(args.region)
         raise
     except RuntimeError as e:
         cause = e.__cause__
         if cause is not None and _is_rag_region_allowlist_error(cause):
-            _exit_rag_region_allowlist()
+            _exit_rag_region_allowlist(args.region)
         raise
 
     sink = args.import_result_sink.strip()

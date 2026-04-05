@@ -5,7 +5,8 @@ Env (injected by Terraform / Cloud Run):
   PORT                    — Cloud Run sets this (default 8080 locally)
   CORS_ALLOWED_ORIGINS    — comma-separated, e.g. https://no-ego.net,https://www.no-ego.net
   GCS_CORPUS_BUCKET       — corpus bucket (upload sources; import into a RAG corpus separately)
-  RAG_CORPUS_RESOURCE     — full ragCorpora/... name; includes region (e.g. .../locations/us-central1/ragCorpora/...). Retrieval uses that region; Gemini still uses GCP_REGION.
+  RAG_CORPUS_RESOURCE     — full ragCorpora/... name; includes region (e.g. .../locations/us-central1/...).
+                            Retrieval uses that region; Gemini still uses GCP_REGION (may differ if you use a backup RAG region).
   RAG_TOP_K               — optional retrieval count (default 8)
   RAG_VECTOR_DISTANCE_THRESHOLD — optional; if set, passed to RAG filter
   GCS_SESSIONS_BUCKET     — session JSON blobs (optional; in-memory if unset)

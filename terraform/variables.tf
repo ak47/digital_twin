@@ -74,9 +74,9 @@ variable "rag_engine_tier" {
 
 variable "rag_corpus_ingest_region" {
   description = <<-EOT
-    Optional extra Vertex region for a second google_vertex_ai_rag_engine_config instance (advanced).
-    Default "" = RAG Engine only in var.region (us-central1). Set only if you intentionally ingest
-    corpora in another region and need managed DB there too.
+    Second Vertex region for RAG Engine managed DB when ingest cannot use var.region (e.g. us-central1
+    RAG allowlist). Typical backup: europe-west4 — set this, terraform apply, then run ingest with
+    --region matching this value. Default "" = RAG Engine only in var.region.
   EOT
   type        = string
   default     = ""

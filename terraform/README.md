@@ -55,6 +55,15 @@ Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.reg
 
    **Region:** RAG corpus create/import uses **`us-central1`** by default (same as **`var.region`**). The app resolves retrieval from **`RAG_CORPUS_RESOURCE`**; Gemini uses **`GCP_REGION`** on Cloud Run. If corpus creation fails with an allowlist error, request **RAG Engine access in `us-central1`** for your project from Google Cloud support (see error text for the support channel).
 
+#### RAG backup region (when `us-central1` corpus creation is blocked)
+
+Google may block **RAG Engine** in `us-central1` for new projects until allowlisted. You can still run the **API and Gemini in `us-central1`** while hosting the **RAG corpus in another [supported region](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-overview#supported-regions)** (commonly **`europe-west4`**).
+
+1. In **`terraform.tfvars`**: `rag_corpus_ingest_region = "europe-west4"`
+2. **`terraform apply`** (creates a second `google_vertex_ai_rag_engine_config` there; corpus bucket stays in `us-central1`)
+3. Ingest with **`--region europe-west4`** (same as `ingest_rag_corpus.py` / stderr instructions)
+4. Set **`rag_corpus_resource_name`** / **`RAG_CORPUS_RESOURCE`** to the printed name (it will contain `locations/europe-west4/`). **`rag_vertex.py`** initializes Vertex in that location for retrieval only.
+
 3. **Wire Cloud Run** with the printed resource name:
 
    - Local / Terraform: `TF_VAR_rag_corpus_resource_name=projects/.../ragCorpora/...`
