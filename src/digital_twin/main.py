@@ -89,14 +89,15 @@ if _origins:
     )
 
 
-@app.get("/health")
+@app.get("/health", response_class=JSONResponse)
 def health() -> dict[str, str]:
+    """Liveness/readiness; always application/json when this app handles the request."""
     return {"status": "ok"}
 
 
 @app.head("/health")
 def health_head() -> Response:
-    return Response(status_code=200)
+    return Response(status_code=200, media_type="application/json")
 
 
 @app.get("/")
