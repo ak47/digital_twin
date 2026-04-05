@@ -7,7 +7,7 @@ Env (injected by Terraform / Cloud Run):
   GCS_CORPUS_BUCKET       — reserved for RAG (unused in this module yet)
   GCS_SESSIONS_BUCKET     — session JSON blobs (optional; in-memory if unset)
   GCP_PROJECT_ID, GCP_REGION — Vertex Gemini
-  GEMINI_MODEL            — optional, default gemini-2.0-flash-001
+  GEMINI_MODEL            — optional, default gemini-2.5-flash (Vertex)
   RATE_LIMIT_REQUESTS_PER_MINUTE — default 30
   SYSTEM_PROMPT_PATH      — override path to system.md
 """

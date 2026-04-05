@@ -28,6 +28,12 @@ variable "container_image" {
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
 
+variable "gemini_model" {
+  description = "Vertex AI Gemini model id passed to Cloud Run as GEMINI_MODEL (see GCP model versions doc)."
+  type        = string
+  default     = "gemini-2.5-flash"
+}
+
 variable "cors_allowed_origins" {
   description = "Origins allowed by the Cloud Run API (mirrors no-ego.net site)."
   type        = list(string)

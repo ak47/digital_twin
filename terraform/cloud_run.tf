@@ -51,6 +51,10 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "CORS_ALLOWED_ORIGINS"
         value = join(",", var.cors_allowed_origins)
       }
+      env {
+        name  = "GEMINI_MODEL"
+        value = var.gemini_model
+      }
     }
   }
 

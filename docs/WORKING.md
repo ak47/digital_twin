@@ -4,6 +4,7 @@ How to read this file:
 
 - Blocks wrapped in **`==== … ====`** are **section headers** so you can scan quickly.
 - The **first** big block under **“CURRENT RUNBOOK”** is the **up-to-date, end-to-end** path (rebuild **linux/amd64** image → push → Terraform). Prefer that when you are unsure.
+- After deploy + custom domain, use **REFERENCE — Post-launch checklist** as an ordered verification list.
 - Everything **below** the second `====` divider is **reference** material (one-off setup, CI, WIF, extra commands).
 
 **While custom DNS propagates:** keep using the **`cloud_run_uri`** from `terraform output` (the `*.run.app` URL). The API and widget do not depend on `digital-twin.no-ego.net` until you point the front-end config at it.
@@ -403,6 +404,124 @@ terraform output
 - `cloud_run_uri` — current service URL.
 
 ================================================================================
+## REFERENCE — Post-launch checklist (work through in order)
+================================================================================
+
+Use your real **`PROJECT_ID`** (e.g. `digital-twin-492318`), **`REGION`** (`us-central1`), and **`CUSTOM_DOMAIN`** if you use one (e.g. `digital-twin.no-ego.net`). Treat the checkboxes as your own tracker (copy the section into an issue or tick mentally).
+
+```bash
+export PROJECT_ID="YOUR_GCP_PROJECT_ID"
+export REGION="us-central1"
+export CUSTOM_DOMAIN="digital-twin.no-ego.net"   # or skip sections that need it
+```
+
+### 1) CI deployed the service you expect
+
+- [ ] GitHub Actions **Deploy API** workflow is green on `main`.
+- [ ] Cloud Run revision and image look right:
+
+```bash
+gcloud run services describe digital-twin-api \
+  --region="${REGION}" \
+  --project="${PROJECT_ID}" \
+  --format="yaml(status.latestReadyRevisionName,spec.template.spec.containers[0].image)"
+```
+
+### 2) Custom domain mapping is ready (skip if you only use `*.run.app`)
+
+- [ ] Mapping exists and managed cert is active:
+
+```bash
+gcloud beta run domain-mappings describe \
+  --domain="${CUSTOM_DOMAIN}" \
+  --region="${REGION}" \
+  --project="${PROJECT_ID}" \
+  --format="yaml(status.conditions)"
+```
+
+- [ ] **`Ready`** and **`CertificateProvisioned`** are **`True`**.
+
+### 3) DNS points at Google
+
+- [ ] Registrar / DNS host has the **CNAME** (or records) Cloud Run showed when you created the mapping — usually **`digital-twin` → `ghs.googlehosted.com.`** (FQDN with trailing dot where the UI allows it).
+
+```bash
+dig +short "${CUSTOM_DOMAIN}" CNAME
+dig +short "${CUSTOM_DOMAIN}"
+```
+
+### 4) HTTPS and `/health`
+
+Set **`API_BASE`** to your public API URL (custom domain **or** `cloud_run_uri` from `terraform output -raw cloud_run_uri`).
+
+```bash
+export API_BASE="https://digital-twin.no-ego.net"
+```
+
+- [ ] **GET** returns **200**:
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" "${API_BASE}/health"
+curl -sS "${API_BASE}/health"
+```
+
+- [ ] **HEAD** returns **200** (requires a deploy that includes **`HEAD /health`** in the app):
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" -I "${API_BASE}/health"
+```
+
+### 5) Core API paths
+
+- [ ] **`${API_BASE}/docs`** loads in a browser (or you have intentionally disabled public docs).
+- [ ] **Chat** responds (streaming):
+
+```bash
+curl -sS -N -X POST "${API_BASE}/api/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"hello"}'
+```
+
+### 6) CORS matches the real browser origin
+
+The allowlist is **`cors_allowed_origins`** in Terraform (typically **`https://no-ego.net`** and **`https://www.no-ego.net`**). The **API hostname** is not an “origin” for CORS — the **page** URL is.
+
+- [ ] Run the **OPTIONS** probe in **REFERENCE — CORS / session header** and confirm `access-control-allow-origin` for your site.
+- [ ] From the real widget or site, **POST `/api/chat`** succeeds with no CORS errors in devtools.
+
+### 7) Wire the front-end
+
+- [ ] Widget / site config uses **`API_BASE`** for API calls.
+- [ ] If you use **`X-Session-Id`**, confirm session create and reuse in the UI.
+
+### 8) Runtime env and IAM (GCP console or `gcloud run services describe`)
+
+- [ ] **`GCP_PROJECT_ID`** / **`GCP_REGION`** match the project and region where Vertex is used.
+- [ ] Cloud Run **runtime** service account can call Vertex / Gemini (**`roles/aiplatform.user`** or equivalent for your setup).
+- [ ] **`GCS_SESSIONS_BUCKET`** (if set): SA can read/write that bucket.
+- [ ] **Corpus / RAG:** bucket populated and any ingest documented in your process.
+
+### 9) Terraform vs live image (after CI deploys)
+
+- [ ] From `terraform/`:
+
+```bash
+cd terraform
+export TF_VAR_project_id="${PROJECT_ID}"
+terraform refresh
+terraform plan
+```
+
+- [ ] No unwanted drift; if only the image changed in CI, either **`apply -var="container_image=..."`** to match or treat CI as source of truth (see **Terraform vs CI** under GitHub Actions).
+
+### 10) Optional next steps
+
+- [ ] Lock down or remove **`/docs`** in production if you want a smaller attack surface.
+- [ ] Uptime check on **`GET /health`**.
+- [ ] Log/metric alerts for 5xx on Cloud Run.
+- [ ] Manage **domain mapping** in Terraform (`google_cloud_run_domain_mapping`) once manual setup is stable.
+
+================================================================================
 ## REFERENCE — Troubleshooting
 ================================================================================
 
@@ -410,3 +529,7 @@ terraform output
 - **Cloud Run 403 on push:** Confirm `gcloud auth configure-docker us-central1-docker.pkg.dev`.
 - **Terraform wants to change the image after CI:** Refresh or re-apply with the image tag CI used (see *Terraform vs CI* above).
 - **Cloud Run: “failed to start and listen on PORT=8080”** after a **local** `docker build` on **Mac (M1/M2/M3):** use the **CURRENT RUNBOOK** (`--platform linux/amd64`). **GitHub Actions** `ubuntu-latest` is already amd64. Check revision logs in Cloud Console if it still fails (import errors, etc.).
+- **`Vertex not configured: set GCP_PROJECT_ID` from `/api/chat`:** The Cloud Run revision has no **`GCP_PROJECT_ID`** (common if the service was created outside Terraform and CI only updates the image). **Fix now:**  
+  `gcloud run services update digital-twin-api --region=us-central1 --project=YOUR_PROJECT --update-env-vars="GCP_PROJECT_ID=YOUR_PROJECT,GCP_REGION=us-central1"`  
+  Or push **`main`** so the **Deploy API** workflow runs (it now sets those env vars on every deploy). The app also resolves the project from **metadata** on Cloud Run when **`K_SERVICE`** is set, after you deploy a build that includes the `llm.py` change.
+- **Chat returns `Publisher Model … gemini-…` NOT_FOUND:** Your project may not expose that exact model id yet. Set **`GEMINI_MODEL`** to a current id (default in app/Terraform is **`gemini-2.5-flash`**). In Terraform use **`-var="gemini_model=gemini-2.5-flash"`** (or another id from [Model versions](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions)), then **`terraform apply`**, or set the env var on the Cloud Run service in console. Confirm **Vertex AI API** is enabled and billing is active; open **Vertex → Model Garden** if Google prompts you to enable access.

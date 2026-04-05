@@ -4,13 +4,46 @@ from __future__ import annotations
 
 import logging
 import os
+import urllib.error
+import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-001").strip()
+# Default tracks Vertex “latest stable” Flash; override with GEMINI_MODEL if needed.
+_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+
+# Filled on first use: env vars, else metadata (Cloud Run when CI omitted GCP_PROJECT_ID).
+_resolved_project_id: str | None = None
+
+
+def _resolve_gcp_project() -> str:
+    global _resolved_project_id
+    if _resolved_project_id is not None:
+        return _resolved_project_id
+    for key in ("GCP_PROJECT_ID", "GOOGLE_CLOUD_PROJECT"):
+        v = os.environ.get(key, "").strip()
+        if v:
+            _resolved_project_id = v
+            return v
+    # Cloud Run sets K_SERVICE; metadata has project id even if deploy omitted env.
+    if os.environ.get("K_SERVICE", "").strip():
+        try:
+            req = urllib.request.Request(
+                "http://metadata.google.internal/computeMetadata/v1/project/project-id",
+                headers={"Metadata-Flavor": "Google"},
+            )
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                pid = resp.read().decode().strip()
+                if pid:
+                    _resolved_project_id = pid
+                    return pid
+        except (OSError, urllib.error.URLError) as e:
+            logger.warning("metadata project-id lookup failed: %s", e)
+    _resolved_project_id = ""
+    return ""
 
 
 def _load_system_instruction() -> str:
@@ -31,19 +64,16 @@ def stream_reply(
     user_text: str,
 ) -> Iterator[str]:
     """
-    Yield text fragments. Uses Vertex when GCP_PROJECT_ID is set and google-genai works;
-    otherwise yields a single fallback string.
+    Yield text fragments. Uses Vertex when project id is known (env or Cloud Run metadata)
+    and google-genai works; otherwise yields a single fallback string.
     """
-    project = (
-        os.environ.get("GCP_PROJECT_ID", "").strip()
-        or os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip()
-    )
+    project = _resolve_gcp_project()
     region = os.environ.get("GCP_REGION", "us-central1").strip()
     system = _load_system_instruction()
 
     if not project:
         yield (
-            "(Vertex not configured: set GCP_PROJECT_ID.) "
+            "(Vertex not configured: set GCP_PROJECT_ID on the service, or run on Cloud Run.) "
             f"You asked: {user_text[:500]!r}"
         )
         return
