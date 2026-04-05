@@ -87,6 +87,10 @@ jobs:
           RAG_CORPUS_RESOURCE: ${{ vars.RAG_CORPUS_RESOURCE }}
           # Optional override; default matches terraform/variables.tf (comma in value → use ^;^ below).
           CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+          # Idle digest: Gmail (GMAIL_SECRET_NAME + GMAIL_DELEGATED_USER) — see README.
+          RESUME_BOT_DIGEST_EMAIL_TO: ${{ vars.RESUME_BOT_DIGEST_EMAIL_TO }}
+          GMAIL_DELEGATED_USER: ${{ vars.GMAIL_DELEGATED_USER }}
+          GMAIL_SECRET_NAME: ${{ vars.GMAIL_SECRET_NAME }}
         run: |
           set -eu
           # Default gcloud --update-env-vars splits on commas between KEY=value pairs, so
@@ -97,9 +101,22 @@ jobs:
           if [ -n "${RAG_CORPUS_RESOURCE}" ]; then
             EXTRA=";RAG_CORPUS_RESOURCE=${RAG_CORPUS_RESOURCE}"
           fi
-          gcloud run services update "${SERVICE}" \
-            --project="${PROJECT_ID}" \
-            --region="${REGION}" \
-            --image="${IMAGE}" \
-            --update-env-vars "^;^GCP_PROJECT_ID=${PROJECT_ID};GCP_REGION=${REGION};CORS_ALLOWED_ORIGINS=${CORS}${EXTRA}" \
-            --quiet
+          SECRET_ARGS=()
+          if [ -n "${RESUME_BOT_DIGEST_EMAIL_TO:-}" ]; then
+            EXTRA="${EXTRA};RESUME_BOT_DIGEST_EMAIL_TO=${RESUME_BOT_DIGEST_EMAIL_TO}"
+            if [ -n "${GMAIL_SECRET_NAME:-}" ] && [ -n "${GMAIL_DELEGATED_USER:-}" ]; then
+              EXTRA="${EXTRA};GMAIL_DELEGATED_USER=${GMAIL_DELEGATED_USER}"
+              SECRET_ARGS=(--set-secrets="GMAIL_SERVICE_ACCOUNT_JSON=${GMAIL_SECRET_NAME}:latest")
+            fi
+          fi
+          GCLOUD=(gcloud run services update "${SERVICE}"
+            --project="${PROJECT_ID}"
+            --region="${REGION}"
+            --image="${IMAGE}"
+            --update-env-vars "^;^GCP_PROJECT_ID=${PROJECT_ID};GCP_REGION=${REGION};CORS_ALLOWED_ORIGINS=${CORS}${EXTRA}"
+            --quiet)
+          if [ "${#SECRET_ARGS[@]}" -gt 0 ]; then
+            "${GCLOUD[@]}" "${SECRET_ARGS[@]}"
+          else
+            "${GCLOUD[@]}"
+          fi

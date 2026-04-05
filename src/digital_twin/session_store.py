@@ -7,9 +7,14 @@ import logging
 import os
 import re
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 _BUCKET = os.environ.get("GCS_SESSIONS_BUCKET", "").strip()
 _PREFIX = os.environ.get("GCS_SESSIONS_PREFIX", "sessions").strip().strip("/")
@@ -49,14 +54,15 @@ def load_messages(session_id: str) -> list[dict[str, Any]]:
             return []
         data = json.loads(blob.download_as_text(encoding="utf-8"))
         raw = data.get("messages")
-        return raw if isinstance(raw, list) else []
+        if isinstance(raw, list):
+            return [dict(m) for m in raw]
+        return []
     except Exception as e:
         logger.exception("GCS load failed for session %s: %s", session_id, e)
         return []
 
 
 def save_messages(session_id: str, messages: list[dict[str, Any]]) -> None:
-    body = {"messages": messages}
     if not _BUCKET:
         _memory[session_id] = [dict(m) for m in messages]
         return
@@ -66,8 +72,25 @@ def save_messages(session_id: str, messages: list[dict[str, Any]]) -> None:
 
         client = storage.Client()
         blob = client.bucket(_BUCKET).blob(_blob_path(session_id))
+        doc: dict[str, Any] = {}
+        if blob.exists():
+            try:
+                loaded = json.loads(blob.download_as_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    doc.update(loaded)
+            except Exception:
+                doc = {}
+
+        doc["messages"] = [dict(m) for m in messages]
+        doc["last_activity_at"] = _utc_now_iso()
+        sent = doc.get("idle_digest_sent_at")
+        if sent is not None and not isinstance(sent, str):
+            doc["idle_digest_sent_at"] = None
+        elif "idle_digest_sent_at" not in doc:
+            doc["idle_digest_sent_at"] = None
+
         blob.upload_from_string(
-            json.dumps(body, ensure_ascii=False, indent=2),
+            json.dumps(doc, ensure_ascii=False, indent=2),
             content_type="application/json; charset=utf-8",
         )
     except Exception as e:
