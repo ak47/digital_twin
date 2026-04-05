@@ -1,0 +1,14 @@
+# Optional remote state — copy to backend.tf (gitignored) when you want state in GCS.
+#
+#   cp backend.tf.example backend.tf
+#   # Edit bucket/prefix, create bucket + versioning (see README).
+#   terraform init -migrate-state
+#
+# Omit backend.tf entirely for default local state (terraform.tfstate in this directory).
+
+terraform {
+  backend "gcs" {
+    bucket = "YOUR_UNIQUE_TF_STATE_BUCKET"
+    prefix = "digital-twin/terraform"
+  }
+}

@@ -15,11 +15,6 @@ terraform {
       version = ">= 3.6.0"
     }
   }
-
-  # Remote state: copy backend.hcl.example → backend.hcl (gitignored), then:
-  #   terraform init -backend-config=backend.hcl -migrate-state
-  # Local state without backend.hcl: terraform init -backend=false
-  backend "gcs" {}
 }
 
 provider "google" {

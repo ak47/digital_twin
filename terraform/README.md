@@ -1,6 +1,6 @@
 # Terraform — digital_twin
 
-**Backend:** This stack uses a **partial `gcs` backend** (`backend "gcs" {}`). Use **`terraform init -backend-config=backend.hcl`** after copying **`backend.hcl.example`**, or **`terraform init -backend=false`** to keep local state (no remote bucket).
+**Backend:** Default is **local state** (`terraform.tfstate` in this directory). For **GCS remote state**, copy **`backend.tf.example`** → **`backend.tf`** (gitignored), edit `bucket` / `prefix`, then **`terraform init -migrate-state`** once.
 
 ## Minimal flow
 
@@ -14,14 +14,10 @@
 
    ```bash
    cd terraform
-   # Pick one:
-   # A) Remote state — cp backend.hcl.example backend.hcl, edit bucket, then:
-   #    terraform init -backend-config=backend.hcl
-   #    # First migration from local state:
-   #    terraform init -backend-config=backend.hcl -migrate-state
-   # B) Local state only:
-   terraform init -backend=false
+   terraform init
    ```
+
+   **Remote state:** see **[GCS remote state](#gcs-remote-state-dedicated-bucket)** below.
 
 3. **Apply** (creates GCP resources; GitHub deploy wiring defaults to repo `ak47/digital_twin`):
 
@@ -38,6 +34,54 @@
    Paste the three lines into **Settings → Secrets and variables → Actions**.
 
 5. **CI** — `deploy-api.yml` builds and deploys the container; `ingest-rag-corpus.yml` re-imports an existing corpus from GCS (manual upload first). Neither job runs `terraform apply` by default.
+
+### GCS remote state (dedicated bucket)
+
+Use a **separate** bucket from the RAG corpus bucket. State bucket name must be **globally unique** across GCS.
+
+1. **Create the bucket** (pick a region; `US` multi-region is common for state):
+
+   ```bash
+   export GCP_PROJECT="YOUR_PROJECT_ID"
+   export TF_STATE_BUCKET="YOUR_UNIQUE_TF_STATE_BUCKET"
+
+   gcloud storage buckets create "gs://${TF_STATE_BUCKET}" \
+     --project="${GCP_PROJECT}" \
+     --location=US \
+     --uniform-bucket-level-access
+
+   gcloud storage buckets update "gs://${TF_STATE_BUCKET}" --versioning
+   ```
+
+2. **Grant Terraform’s identity** `roles/storage.objectAdmin` on that bucket only (use the account you run `terraform` with — your user or a deploy SA):
+
+   ```bash
+   export TERRAFORM_ACTOR="you@example.com"   # or service-XXXX@PROJECT.iam.gserviceaccount.com
+
+   gcloud storage buckets add-iam-policy-binding "gs://${TF_STATE_BUCKET}" \
+     --member="user:${TERRAFORM_ACTOR}" \
+     --role="roles/storage.objectAdmin"
+   ```
+
+   For a **service account**, use `--member="serviceAccount:${TERRAFORM_ACTOR}"` instead.
+
+3. **Wire Terraform** — from **`terraform/`**:
+
+   ```bash
+   cp backend.tf.example backend.tf
+   # Edit backend.tf: set bucket = "${TF_STATE_BUCKET}" (and prefix if you want)
+   ```
+
+4. **Migrate existing local state** (one time per working copy that already has `terraform.tfstate`):
+
+   ```bash
+   rm -rf .terraform
+   terraform init -migrate-state
+   ```
+
+   Answer **`yes`** when Terraform asks to copy state to GCS. After that, **`terraform.tfstate`** in this directory is no longer used; back up or delete it only after you confirm **`terraform state list`** works from a **fresh** `terraform init` on another machine.
+
+5. **New clone** (no local state): same `backend.tf`, then **`terraform init`** (no `-migrate-state`).
 
 ### If `WorkloadIdentityPool` returns **409 already exists**
 

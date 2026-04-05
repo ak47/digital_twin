@@ -75,9 +75,9 @@ Optional: keep `GCP_PROJECT_ID` in `.env` for **local app runs** only (see `.env
 
 After apply, map **`digital_twin.no-ego.net`** to the Cloud Run service (domain mapping in console or `gcloud run domain-mappings create`). CORS allowlist is already parameterized (`cors_allowed_origins`).
 
-## Remote state (recommended)
+## Remote state (optional)
 
-Use a dedicated GCS bucket and **`terraform/backend.hcl`** (see **`terraform/backend.hcl.example`** and **`terraform/README.md`**). Run **`terraform init -backend-config=backend.hcl -migrate-state`** once to move local state. Without **`backend.hcl`**, use **`terraform init -backend=false`**.
+Default is **local** `terraform.tfstate`. For GCS state, copy **`terraform/backend.tf.example`** → **`terraform/backend.tf`**, set **`bucket`** / **`prefix`**, then **`terraform init -migrate-state`** from **`terraform/`** (see **`terraform/README.md`**).
 
 ## Layout
 
