@@ -84,10 +84,11 @@ jobs:
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
-          # Project/region for Vertex; CORS for browser preflight (escape commas inside values for gcloud).
+          # Vertex needs project/region on the revision. CORS for no-ego is defaulted in app code when
+          # CORS_ALLOWED_ORIGINS is unset (see main.py); avoid commas in --update-env-vars (gcloud breaks).
           gcloud run services update "${SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${IMAGE}" \
-            --update-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},CORS_ALLOWED_ORIGINS=https://no-ego.net\,https://www.no-ego.net" \
+            --update-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION}" \
             --quiet
