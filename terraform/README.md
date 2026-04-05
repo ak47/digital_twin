@@ -35,6 +35,22 @@
 
 5. **CI** — `deploy-api.yml` builds and deploys the container; `ingest-rag-corpus.yml` re-imports an existing corpus from GCS (manual upload first). Neither job runs `terraform apply` by default.
 
+### Custom domain on the API (Terraform)
+
+Set **`cloud_run_custom_domain`** (e.g. `digital-twin.no-ego.net`) in **`terraform.tfvars`**. Terraform creates **`google_cloud_run_domain_mapping`** to route that hostname to **`${name_prefix}-api`** in **`var.region`**.
+
+**Before apply:** verify **ownership of the base domain** (e.g. `no-ego.net`) for this GCP project — [Search Console](https://search.google.com/search-console) or `gcloud domains verify`.
+
+**After apply:** run **`terraform output cloud_run_custom_domain_dns_records`** and add every record at your DNS host. Then check **`curl -sS "https://<hostname>/health"`** returns **`{"status":"ok"}`** (not HTML).
+
+If the mapping already exists in GCP, import it before managing with Terraform:
+
+```text
+terraform import 'google_cloud_run_domain_mapping.api[0]' locations/REGION/namespaces/PROJECT_ID/domainmappings/HOSTNAME
+```
+
+Example: `locations/us-central1/namespaces/my-proj/domainmappings/digital-twin.no-ego.net`
+
 ### GCS remote state (dedicated bucket)
 
 Use a **separate** bucket from the RAG corpus bucket. State bucket name must be **globally unique** across GCS.

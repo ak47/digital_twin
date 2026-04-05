@@ -13,6 +13,7 @@
 # rag_corpus_ingest_region = "europe-west4"   # backup if RAG in var.region (us-central1) is allowlist-blocked
 # session_retention_days = 3
 # cors_allowed_origins   = ["https://no-ego.net", "https://www.no-ego.net"]
+# cloud_run_custom_domain = "digital-twin.no-ego.net"   # optional; verify no-ego.net for GCP first
 # rag_corpus_resource_name = "projects/your-project/locations/us-central1/ragCorpora/your-corpus-id"
 #
 # Teardown / project migration only (deletes bucket contents with the bucket):

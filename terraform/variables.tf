@@ -49,6 +49,16 @@ variable "cors_allowed_origins" {
   ]
 }
 
+variable "cloud_run_custom_domain" {
+  description = <<-EOT
+    Full hostname to map to the API service (e.g. digital-twin.no-ego.net). Empty string skips this resource.
+    The registrable domain (e.g. no-ego.net) must be verified for this GCP project before apply succeeds.
+    After apply, create the DNS records from output cloud_run_custom_domain_dns_records; TLS may take extra minutes.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "session_retention_days" {
   description = "GCS lifecycle: delete session JSON objects after N days."
   type        = number

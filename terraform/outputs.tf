@@ -46,6 +46,19 @@ output "cloud_run_uri" {
   value       = google_cloud_run_v2_service.api.uri
 }
 
+output "cloud_run_custom_domain_url" {
+  description = "HTTPS URL when cloud_run_custom_domain is set; use after DNS records propagate."
+  value       = var.cloud_run_custom_domain != "" ? "https://${var.cloud_run_custom_domain}" : null
+}
+
+output "cloud_run_custom_domain_dns_records" {
+  description = "DNS records for the domain mapping (type, name, rrdata). Add at your DNS provider."
+  value = var.cloud_run_custom_domain != "" ? try(
+    google_cloud_run_domain_mapping.api[0].status[0].resource_records,
+    []
+  ) : []
+}
+
 output "github_actions_wif_provider" {
   description = "Repository secret GCP_WORKLOAD_IDENTITY_PROVIDER (full resource name). Null if github_repository is empty (WIF disabled)."
   value       = one(google_iam_workload_identity_pool_provider.github[*].name)

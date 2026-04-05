@@ -73,7 +73,7 @@ Optional: keep `GCP_PROJECT_ID` in `.env` for **local app runs** only (see `.env
 
 ## Custom domain
 
-After apply, map **`digital_twin.no-ego.net`** to the Cloud Run service (domain mapping in console or `gcloud run domain-mappings create`). CORS allowlist is already parameterized (`cors_allowed_origins`).
+After apply, map **`digital-twin.no-ego.net`** to the Cloud Run API service in **`terraform/README.md`** (**`cloud_run_custom_domain`** in Terraform) or manually (Console / `gcloud run domain-mappings create`). CORS allowlist is already parameterized (`cors_allowed_origins`).
 
 ## Remote state (optional)
 
