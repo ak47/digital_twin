@@ -74,10 +74,9 @@ variable "rag_engine_tier" {
 
 variable "rag_corpus_ingest_region" {
   description = <<-EOT
-    Optional second Vertex region for RAG Engine managed DB (e.g. europe-west3/4) when you ingest
-    there but keep Cloud Run in var.region. Default "" = only var.region (typical: us-central1 for all).
-    Some new projects cannot use RAG in us-central1 until allowlisted; then set this to a GA RAG region
-    and pass the same value to scripts/ingest_rag_corpus.py --region.
+    Optional extra Vertex region for a second google_vertex_ai_rag_engine_config instance (advanced).
+    Default "" = RAG Engine only in var.region (us-central1). Set only if you intentionally ingest
+    corpora in another region and need managed DB there too.
   EOT
   type        = string
   default     = ""

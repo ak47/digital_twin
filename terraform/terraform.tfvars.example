@@ -10,7 +10,7 @@
 # Optional overrides:
 # name_prefix            = "digital-twin"
 # rag_engine_tier        = "BASIC"
-# rag_corpus_ingest_region = "europe-west4"   # only if RAG ingest cannot use var.region (allowlist)
+# rag_corpus_ingest_region = "OTHER_REGION"   # advanced: second RAG Engine region only if you need it
 # session_retention_days = 3
 # cors_allowed_origins   = ["https://no-ego.net", "https://www.no-ego.net"]
 # rag_corpus_resource_name = "projects/your-project/locations/us-central1/ragCorpora/your-corpus-id"

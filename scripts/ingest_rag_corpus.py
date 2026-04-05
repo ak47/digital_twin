@@ -12,11 +12,11 @@ Example:
     --project-id digital-twin-492318 \\
     --files ./knowledge.txt ./Profile.pdf
 
-Default --region matches Terraform (us-central1). If RAG create/import is denied there, use a
-GA RAG region (e.g. europe-west4) and set Terraform rag_corpus_ingest_region to the same value.
+Default --region is us-central1 (same as Terraform var.region). If corpus creation fails with an
+allowlist error, request RAG Engine access for your project from Google (see stderr message).
 
-If rag.import_files fails with 500 after upload: terraform apply (RAG Engine in --region + corpus
-bucket IAM for the Vertex AI Service Agent); see terraform/README.md → RAG.
+If rag.import_files fails with 500 after upload: terraform apply (RAG Engine + corpus bucket IAM);
+see terraform/README.md → RAG.
 """
 from __future__ import annotations
 
@@ -28,6 +28,11 @@ import time
 from pathlib import Path
 
 from google.api_core import exceptions as gcp_exceptions
+
+
+def _is_rag_region_allowlist_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "allowlisted" in msg and "rag engine" in msg
 
 
 def _terraform_corpus_bucket(repo_root: Path) -> str:
@@ -86,9 +91,8 @@ def main() -> None:
         "--region",
         default="us-central1",
         help=(
-            "Vertex location for RAG corpus create/import (must match RAG Engine region in Terraform). "
-            "If us-central1 is not available for RAG in your project, use europe-west4 (or europe-west3) "
-            "and set Terraform variable rag_corpus_ingest_region to that region."
+            "Vertex location for RAG corpus create/import; must match a region where "
+            "google_vertex_ai_rag_engine_config exists (default: same as Terraform var.region)."
         ),
     )
     parser.add_argument(
@@ -161,12 +165,33 @@ def main() -> None:
             publisher_model="publishers/google/models/text-embedding-005"
         )
     )
-    rag_corpus = rag.create_corpus(
-        display_name=args.display_name,
-        backend_config=rag.RagVectorDbConfig(
-            rag_embedding_model_config=embedding_model_config,
-        ),
-    )
+    def _exit_rag_region_allowlist() -> None:
+        print(
+            "RAG corpus creation was rejected for this Vertex region. Google may restrict RAG Engine "
+            "to allowlisted projects in this region.\n"
+            "\n"
+            "To proceed in us-central1, contact Google Cloud / the channel named in the API error "
+            "(e.g. vertex-ai-rag-engine-support@google.com) to request allowlisting for your project.\n",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    try:
+        rag_corpus = rag.create_corpus(
+            display_name=args.display_name,
+            backend_config=rag.RagVectorDbConfig(
+                rag_embedding_model_config=embedding_model_config,
+            ),
+        )
+    except gcp_exceptions.InvalidArgument as e:
+        if _is_rag_region_allowlist_error(e):
+            _exit_rag_region_allowlist()
+        raise
+    except RuntimeError as e:
+        cause = e.__cause__
+        if cause is not None and _is_rag_region_allowlist_error(cause):
+            _exit_rag_region_allowlist()
+        raise
 
     sink = args.import_result_sink.strip()
     import_kw: dict = {}

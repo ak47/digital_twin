@@ -31,7 +31,7 @@ An old pool id may exist in GCP but not in Terraform state. This stack now uses 
 
 ### RAG: upload `knowledge.txt` / `Profile.pdf` and ingest
 
-Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.region`** (default `us-central1`), optionally a **second** config in **`rag_corpus_ingest_region`** if you ingest in another GA RAG region, provisions the **Vertex AI service identity** (`google_project_service_identity` for `aiplatform.googleapis.com`) so the managed service account exists, then grants that principal **`storage.objectViewer`** on the corpus bucket so Vertex can read `gs://` sources. You still **upload files** and **create a RAG corpus + import** (Vertex does not auto-read the bucket).
+Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.region`** (default `us-central1`), provisions the **Vertex AI service identity** for `aiplatform.googleapis.com`, then grants that principal **`storage.objectViewer`** on the corpus bucket. Optional **`rag_corpus_ingest_region`** adds a second RAG Engine region for non-default ingest layouts. You still **upload files** and **create a RAG corpus + import** (Vertex does not auto-read the bucket).
 
 1. **Bucket name** (after `terraform apply`):
 
@@ -53,7 +53,7 @@ Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.reg
 
    Omit `--bucket` to pull the bucket name from `terraform output corpus_bucket_name`. Objects land under `gs://<bucket>/rag-sources/`.
 
-   **Region:** Defaults to **`us-central1`** (same as Terraform `var.region`). If your project cannot use RAG in `us-central1` yet, pick a [supported RAG region](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-overview#supported-regions) (often `europe-west4`), set **`rag_corpus_ingest_region`** in tfvars to that region, **`terraform apply`**, then pass **`--region`** to the script to match. The app reads the corpus location from **`RAG_CORPUS_RESOURCE`**; Gemini still uses **`GCP_REGION`** on Cloud Run.
+   **Region:** RAG corpus create/import uses **`us-central1`** by default (same as **`var.region`**). The app resolves retrieval from **`RAG_CORPUS_RESOURCE`**; Gemini uses **`GCP_REGION`** on Cloud Run. If corpus creation fails with an allowlist error, request **RAG Engine access in `us-central1`** for your project from Google Cloud support (see error text for the support channel).
 
 3. **Wire Cloud Run** with the printed resource name:
 

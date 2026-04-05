@@ -4,8 +4,8 @@
 #
 # Docs: https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/vertex_ai_rag_engine_config
 #
-# RAG corpora are regional: ingest must run in a region where this config exists. When Cloud Run
-# stays in var.region but ingest uses another GA region (e.g. europe-west4), include both here.
+# RAG corpora are regional: ingest must run in a region where this config exists. If
+# rag_corpus_ingest_region is set, provision RAG Engine in both that region and var.region.
 
 locals {
   rag_engine_regions = toset(compact(distinct([var.region, var.rag_corpus_ingest_region])))
