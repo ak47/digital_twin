@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 logger = logging.getLogger(__name__)
 
-_vertex_init_key: tuple[str, str] | None = None
+_vertex_init_key: tuple[str, str, str] | None = None
+
+_CORPUS_LOC = re.compile(r"^projects/[^/]+/locations/([^/]+)/ragCorpora/")
+
+
+def _vertex_location_for_corpus(corpus_resource_name: str, fallback_region: str) -> str:
+    """RAG retrieval must use the corpus's region (may differ from GCP_REGION / Gemini region)."""
+    m = _CORPUS_LOC.match(corpus_resource_name.strip())
+    return m.group(1) if m else fallback_region.strip() or "us-central1"
 
 
 def fetch_rag_context(
@@ -34,9 +43,10 @@ def fetch_rag_context(
         return ""
 
     global _vertex_init_key
-    key = (project, region)
+    vloc = _vertex_location_for_corpus(corpus_resource_name, region)
+    key = (project, vloc, corpus_resource_name)
     if _vertex_init_key != key:
-        vertexai.init(project=project, location=region)
+        vertexai.init(project=project, location=vloc)
         _vertex_init_key = key
 
     top_k = int(os.environ.get("RAG_TOP_K", "8"))
