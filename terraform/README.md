@@ -1,5 +1,7 @@
 # Terraform — digital_twin
 
+**Backend:** This stack uses a **partial `gcs` backend** (`backend "gcs" {}`). Use **`terraform init -backend-config=backend.hcl`** after copying **`backend.hcl.example`**, or **`terraform init -backend=false`** to keep local state (no remote bucket).
+
 ## Minimal flow
 
 1. **One env var** (or use gitignored `terraform.tfvars` with `project_id = "..."`):
@@ -8,14 +10,26 @@
    export TF_VAR_project_id="YOUR_PROJECT_ID"
    ```
 
-2. **Apply** (creates GCP resources; GitHub deploy wiring defaults to repo `ak47/digital_twin`):
+2. **Init** (first time / new clone):
 
    ```bash
-   terraform init
+   cd terraform
+   # Pick one:
+   # A) Remote state — cp backend.hcl.example backend.hcl, edit bucket, then:
+   #    terraform init -backend-config=backend.hcl
+   #    # First migration from local state:
+   #    terraform init -backend-config=backend.hcl -migrate-state
+   # B) Local state only:
+   terraform init -backend=false
+   ```
+
+3. **Apply** (creates GCP resources; GitHub deploy wiring defaults to repo `ak47/digital_twin`):
+
+   ```bash
    terraform apply
    ```
 
-3. **GitHub secrets** (once per project / after WIF changes). From repo root:
+4. **GitHub secrets** (once per project / after WIF changes). From repo root:
 
    ```bash
    ./scripts/print-github-actions-secrets.sh
@@ -23,7 +37,7 @@
 
    Paste the three lines into **Settings → Secrets and variables → Actions**.
 
-4. **CI** (`.github/workflows/deploy-api.yml`) only builds and deploys the container; it does not run Terraform.
+5. **CI** — `deploy-api.yml` builds and deploys the container; `ingest-rag-corpus.yml` re-imports an existing corpus from GCS (manual upload first). Neither job runs `terraform apply` by default.
 
 ### If `WorkloadIdentityPool` returns **409 already exists**
 
@@ -65,6 +79,10 @@ Google may block **RAG Engine** in `us-central1` for new projects until allowlis
 4. Set **`rag_corpus_resource_name`** / **`RAG_CORPUS_RESOURCE`** to the printed name (it will contain `locations/europe-west4/`). **`rag_vertex.py`** initializes Vertex in that location for retrieval only.
 
 **Unprovisioned RAG Engine:** `scripts/ingest_rag_corpus.py` calls **`UpdateRagEngineConfig`** (Basic or Scaled, from **`TF_VAR_rag_engine_tier`**, default BASIC) before **`create_corpus`** when the regional tier is still inactive — no manual `-replace` step.
+
+**Re-import into the same corpus** (after `gsutil` upload to `rag-sources/`):  
+`python3 scripts/ingest_rag_corpus.py --project-id … --corpus-resource-name 'projects/…/ragCorpora/…' --skip-upload --files README.md`  
+(or GitHub Actions **Ingest RAG corpus** — set Variables **`CORPUS_BUCKET_NAME`** and **`RAG_CORPUS_RESOURCE`**; see **`.github/workflows/ingest-rag-corpus.yml`**). No change to **`RAG_CORPUS_RESOURCE`** on Cloud Run.
 
 3. **Wire Cloud Run** with the printed resource name:
 

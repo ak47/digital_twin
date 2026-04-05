@@ -16,11 +16,10 @@ terraform {
     }
   }
 
-  # Remote state: uncomment after creating a state bucket (see README).
-  # backend "gcs" {
-  #   bucket = "YOUR_TF_STATE_BUCKET"
-  #   prefix = "digital-twin/terraform"
-  # }
+  # Remote state: copy backend.hcl.example → backend.hcl (gitignored), then:
+  #   terraform init -backend-config=backend.hcl -migrate-state
+  # Local state without backend.hcl: terraform init -backend=false
+  backend "gcs" {}
 }
 
 provider "google" {

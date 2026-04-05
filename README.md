@@ -77,7 +77,7 @@ After apply, map **`digital_twin.no-ego.net`** to the Cloud Run service (domain 
 
 ## Remote state (recommended)
 
-Uncomment the `backend "gcs"` block in `terraform/versions.tf` and create a **separate** state bucket (manual or small bootstrap). Never store state only on one laptop.
+Use a dedicated GCS bucket and **`terraform/backend.hcl`** (see **`terraform/backend.hcl.example`** and **`terraform/README.md`**). Run **`terraform init -backend-config=backend.hcl -migrate-state`** once to move local state. Without **`backend.hcl`**, use **`terraform init -backend=false`**.
 
 ## Layout
 

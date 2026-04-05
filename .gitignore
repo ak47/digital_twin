@@ -6,6 +6,7 @@ terraform.tfvars
 terraform.tfvars.json
 *.auto.tfvars
 !terraform.tfvars.example
+terraform/backend.hcl
 rag-sources/
 
 # Terraform

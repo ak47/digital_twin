@@ -1,0 +1,73 @@
+# Re-import gs://…/rag-sources into an existing Vertex RAG corpus (same RAG_CORPUS_RESOURCE).
+# Upload changed files to the corpus bucket first (e.g. gsutil cp … gs://BUCKET/rag-sources/).
+#
+# Repository Variables: CORPUS_BUCKET_NAME, RAG_CORPUS_RESOURCE (required).
+# Optional: RAG_INGEST_REGION (default europe-west4 if not inferable from corpus name).
+# Secrets: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID (same as Deploy API).
+
+name: Ingest RAG corpus
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check GCP secrets
+        env:
+          GCP_WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SA_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          missing=""
+          [ -z "${GCP_WIF_PROVIDER}" ] && missing="${missing} GCP_WORKLOAD_IDENTITY_PROVIDER"
+          [ -z "${GCP_SA_EMAIL}" ] && missing="${missing} GCP_SERVICE_ACCOUNT_EMAIL"
+          [ -z "${GCP_PROJECT_ID}" ] && missing="${missing} GCP_PROJECT_ID"
+          if [ -n "${missing}" ]; then
+            echo "::error::Missing secrets:${missing}"
+            exit 1
+          fi
+
+      - name: Check corpus variables
+        env:
+          BUCKET: ${{ vars.CORPUS_BUCKET_NAME }}
+          CORPUS: ${{ vars.RAG_CORPUS_RESOURCE }}
+        run: |
+          if [ -z "${BUCKET}" ] || [ -z "${CORPUS}" ]; then
+            echo "::error::Set Actions Variables CORPUS_BUCKET_NAME and RAG_CORPUS_RESOURCE"
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install & ingest
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          BUCKET: ${{ vars.CORPUS_BUCKET_NAME }}
+          CORPUS: ${{ vars.RAG_CORPUS_RESOURCE }}
+          RAG_INGEST_REGION: ${{ vars.RAG_INGEST_REGION }}
+        run: |
+          set -eu
+          pip install -e .
+          REGION="${RAG_INGEST_REGION:-europe-west4}"
+          python scripts/ingest_rag_corpus.py \
+            --project-id "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --bucket "${BUCKET}" \
+            --corpus-resource-name "${CORPUS}" \
+            --skip-upload \
+            --files README.md

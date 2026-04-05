@@ -1,0 +1,12 @@
+# Copy to backend.hcl (gitignored) and set bucket. Create the bucket separately (versioning ON).
+#
+#   gsutil mb -p YOUR_PROJECT_ID -l US gs://YOUR_UNIQUE_TF_STATE_BUCKET
+#   gsutil versioning set on gs://YOUR_UNIQUE_TF_STATE_BUCKET
+#
+# Grant your Terraform identity storage.objectAdmin on the bucket.
+#
+# Then from this directory:
+#   terraform init -backend-config=backend.hcl -migrate-state
+
+bucket = "YOUR_UNIQUE_TF_STATE_BUCKET"
+prefix = "digital-twin/terraform"

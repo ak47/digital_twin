@@ -25,10 +25,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from google.api_core import exceptions as gcp_exceptions
 
@@ -190,6 +192,15 @@ def main() -> None:
         default=3,
         help="Retries for rag.import_files on 5xx (default 3).",
     )
+    parser.add_argument(
+        "--corpus-resource-name",
+        default="",
+        help=(
+            "Skip create_corpus; import into this full RagCorpus resource name "
+            "(projects/.../locations/REGION/ragCorpora/ID). Vertex location is taken from the name "
+            "when possible; otherwise use --region."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.project_id.strip():
@@ -212,15 +223,27 @@ def main() -> None:
         _upload(args.project_id, bucket, prefix, paths)
         import_paths = [f"gs://{bucket}/{prefix}"]
 
-    vertexai.init(project=args.project_id, location=args.region)
+    def _vertex_location_from_corpus_resource(name: str) -> str | None:
+        m = re.search(r"/locations/([^/]+)/ragCorpora/", name)
+        return m.group(1) if m else None
 
-    _ensure_vertex_rag_engine_ready(args.project_id, args.region)
+    corpus_existing = args.corpus_resource_name.strip()
+    vertex_location = (
+        _vertex_location_from_corpus_resource(corpus_existing) or args.region
+        if corpus_existing
+        else args.region
+    )
+
+    vertexai.init(project=args.project_id, location=vertex_location)
+
+    _ensure_vertex_rag_engine_ready(args.project_id, vertex_location)
 
     embedding_model_config = rag.RagEmbeddingModelConfig(
         vertex_prediction_endpoint=rag.VertexPredictionEndpoint(
             publisher_model="publishers/google/models/text-embedding-005"
         )
     )
+
     def _exit_rag_region_allowlist(attempted_region: str) -> None:
         print(
             f"RAG corpus creation was rejected in {attempted_region!r}. "
@@ -247,49 +270,56 @@ def main() -> None:
         )
         raise SystemExit(1)
 
-    rag_corpus = None
-    for corpus_try in range(2):
-        try:
-            rag_corpus = rag.create_corpus(
-                display_name=args.display_name,
-                backend_config=rag.RagVectorDbConfig(
-                    rag_embedding_model_config=embedding_model_config,
-                ),
-            )
-            break
-        except gcp_exceptions.InvalidArgument as e:
-            if _is_rag_region_allowlist_error(e):
-                _exit_rag_region_allowlist(args.region)
-            raise
-        except gcp_exceptions.FailedPrecondition as e:
-            if _is_rag_engine_unprovisioned_error(e) and corpus_try == 0:
-                print(
-                    "create_corpus: still unprovisioned; re-applying tier and retrying once after 30s…",
-                    file=sys.stderr,
+    if corpus_existing:
+        rag_corpus = SimpleNamespace(name=corpus_existing)
+        print(
+            f"Using existing corpus {corpus_existing} (Vertex location {vertex_location}).",
+            file=sys.stderr,
+        )
+    else:
+        rag_corpus = None
+        for corpus_try in range(2):
+            try:
+                rag_corpus = rag.create_corpus(
+                    display_name=args.display_name,
+                    backend_config=rag.RagVectorDbConfig(
+                        rag_embedding_model_config=embedding_model_config,
+                    ),
                 )
-                _ensure_vertex_rag_engine_ready(args.project_id, args.region)
-                time.sleep(30)
-                continue
-            raise
-        except RuntimeError as e:
-            cause = e.__cause__
-            if cause is not None and _is_rag_region_allowlist_error(cause):
-                _exit_rag_region_allowlist(args.region)
-            if (
-                cause is not None
-                and _is_rag_engine_unprovisioned_error(cause)
-                and corpus_try == 0
-            ):
-                print(
-                    "create_corpus: still unprovisioned; re-applying tier and retrying once after 30s…",
-                    file=sys.stderr,
-                )
-                _ensure_vertex_rag_engine_ready(args.project_id, args.region)
-                time.sleep(30)
-                continue
-            raise
-    if rag_corpus is None:
-        raise SystemExit("rag.create_corpus failed after retry.")
+                break
+            except gcp_exceptions.InvalidArgument as e:
+                if _is_rag_region_allowlist_error(e):
+                    _exit_rag_region_allowlist(args.region)
+                raise
+            except gcp_exceptions.FailedPrecondition as e:
+                if _is_rag_engine_unprovisioned_error(e) and corpus_try == 0:
+                    print(
+                        "create_corpus: still unprovisioned; re-applying tier and retrying once after 30s…",
+                        file=sys.stderr,
+                    )
+                    _ensure_vertex_rag_engine_ready(args.project_id, vertex_location)
+                    time.sleep(30)
+                    continue
+                raise
+            except RuntimeError as e:
+                cause = e.__cause__
+                if cause is not None and _is_rag_region_allowlist_error(cause):
+                    _exit_rag_region_allowlist(args.region)
+                if (
+                    cause is not None
+                    and _is_rag_engine_unprovisioned_error(cause)
+                    and corpus_try == 0
+                ):
+                    print(
+                        "create_corpus: still unprovisioned; re-applying tier and retrying once after 30s…",
+                        file=sys.stderr,
+                    )
+                    _ensure_vertex_rag_engine_ready(args.project_id, vertex_location)
+                    time.sleep(30)
+                    continue
+                raise
+        if rag_corpus is None:
+            raise SystemExit("rag.create_corpus failed after retry.")
 
     sink = args.import_result_sink.strip()
     import_kw: dict = {}
@@ -329,13 +359,19 @@ def main() -> None:
 
     resource = rag_corpus.name
     print("")
-    print("RAG corpus is ready. Wire the API with:")
+    print("RAG import finished.")
+    if corpus_existing:
+        print(f"Corpus unchanged: {resource!r} (re-ingest only; no TF_VAR / env update needed).")
+    else:
+        print("Wire the API with:")
+        print("")
+        print(f"  export TF_VAR_rag_corpus_resource_name={resource!r}")
+        print("")
+        print("Cloud Run / GitHub Actions variable RAG_CORPUS_RESOURCE: same string, no TF_VAR_ prefix.")
     print("")
-    print(f"  export TF_VAR_rag_corpus_resource_name={resource!r}")
-    print("")
-    print("Cloud Run / GitHub Actions variable RAG_CORPUS_RESOURCE: same string, no TF_VAR_ prefix.")
-    print("")
-    print(f"(Corpus Vertex location: {args.region} — retrieval uses this; Gemini uses GCP_REGION from the app.)")
+    print(
+        f"(Corpus Vertex location: {vertex_location} — retrieval uses this; Gemini uses GCP_REGION from the app.)"
+    )
     print("")
 
 
