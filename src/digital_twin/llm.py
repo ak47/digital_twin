@@ -63,8 +63,8 @@ def _load_system_instruction() -> str:
             base = f.read().strip()
     except OSError:
         base = (
-            "You are a third-person narrator answering questions about Andrew’s "
-            "professional background. Be accurate and concise."
+            "You answer as Andrew in the first person (I, me, my) from the materials "
+            "you are given. Be accurate and concise."
         )
     return base
 

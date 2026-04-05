@@ -100,7 +100,7 @@ Terraform may still reference a placeholder image until you push your image and 
 
 1. **Deploy fresh image** — **`docs/WORKING.md`** (`linux/amd64` + Terraform). While **custom DNS** propagates, use **`terraform output -raw cloud_run_uri`**.
 2. **Custom domain** — `digital-twin.no-ego.net` (optional for dev; see WORKING).
-3. **Shipped in v0.2:** **GCS sessions** (with `GCS_SESSIONS_BUCKET`), **Vertex Gemini Flash** (needs `GCP_PROJECT_ID` + ADC), **per-IP rate limit**, third-person **`system.md`**.
+3. **Shipped in v0.2:** **GCS sessions** (with `GCS_SESSIONS_BUCKET`), **Vertex Gemini Flash** (needs `GCP_PROJECT_ID` + ADC), **per-IP rate limit**, first-person **`system.md`**.
 4. **RAG** — Set **`RAG_CORPUS_RESOURCE`** and ingest **`summary.txt` / PDF** from the corpus bucket (see **`docs/WORKING.md`**); personal files are **not** bundled in the image.
 5. **no-ego widget** — Static JS on About (CORS already allowlisted).
 

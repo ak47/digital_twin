@@ -12,51 +12,98 @@ flowchart TB
     end
 
     subgraph gcp["Google Cloud (Terraform-managed)"]
-        CR["Cloud Run service\ndigital-twin-api"]
+        CR["Cloud Run\n digital-twin-api"]
         AR["Artifact Registry\nDocker images"]
-        GCS_S["GCS bucket\nsessions JSON\n(optional)"]
-        GCS_C["GCS bucket\ncorpus / RAG source\n(infra)"]
-        Vertex["Vertex AI\nGemini model"]
-        subgraph vertex_rag["Vertex RAG (infra)"]
-            RAG["RAG engine config\n(BASIC tier default)"]
+        GCS_S["GCS: sessions bucket\nJSON per session\n(optional)"]
+        GCS_C["GCS: corpus bucket\ncurated files\n(e.g. rag-sources/)"]
+        Vertex["Vertex AI\nGemini\n(google-genai)"]
+        subgraph vertex_rag["Vertex RAG Engine"]
+            RAGCfg["RAG engine config\nper region\n(BASIC default)"]
+            Corpus["RagCorpus\n(imported GCS URIs)"]
         end
     end
 
-    subgraph github["GitHub"]
-        GHA["Actions: build, push,\nupdate Cloud Run"]
+    subgraph github["GitHub Actions"]
+        DeployWF["deploy-api.yml\npush main / dispatch"]
+        IngestWF["ingest-rag-corpus.yml\nworkflow_dispatch only"]
     end
 
-    Web -->|HTTPS SSE + JSON\nCORS + X-Session-Id| CR
-    Dev -->|same API| CR
-    GHA --> AR
-    GHA --> CR
-    CR -->|generate_content_stream| Vertex
-    CR -->|retrieval_query\nwhen RAG_CORPUS_RESOURCE set| RAG
-    CR -->|read/write session blobs\nwhen bucket set| GCS_S
-    GCS_C -->|upload + import\ninto corpus| RAG
+    subgraph repo["Repository (operators)"]
+        IngestPy["scripts/ingest_rag_corpus.py\nupload + corpus + import"]
+        RagSrc["rag-sources/**\n(e.g. knowledge.txt)"]
+    end
+
+    Web -->|HTTPS JSON + SSE\nCORS + X-Session-Id| CR
+    Dev --> CR
+    DeployWF --> AR
+    DeployWF --> CR
+    IngestWF -->|"WIF auth; pip -e .;\npython scripts/ingest_rag_corpus.py"| Corpus
+    RagSrc -->|"local ingest or\ngsutil cp → bucket"| GCS_C
+    GCS_C -->|"import_files"| Corpus
+    RAGCfg -.->|"provisions DB tier"| Corpus
+    CR -->|generate_content_stream\nGCP_REGION| Vertex
+    CR -->|retrieval_query\nregion from corpus resource name| Corpus
+    CR -->|read/write when bucket set| GCS_S
+    IngestPy --> GCS_C
+    IngestPy --> Corpus
 ```
 
 **Notes**
 
-- **Sessions**: If `GCS_SESSIONS_BUCKET` is unset, chat history stays in **process memory** only (lost on scale/cold start).
-- **Knowledge in answers**: **System instruction** from `system.md` only. Biography files live in the **corpus bucket**, are **imported into a Vertex RAG corpus**, and are merged per turn via **`rag.retrieval_query`** when **`RAG_CORPUS_RESOURCE`** is set (`rag_vertex.py` + `llm.py`).
+- **Sessions**: If `GCS_SESSIONS_BUCKET` is unset, history stays in **process memory** (lost on recycle/scale-out).
+- **RAG is optional**: If `RAG_CORPUS_RESOURCE` is unset, answers use **`system.md` only** (no retrieval). When set, `rag_vertex.fetch_rag_context` runs **`vertexai.rag.retrieval_query`**, formats chunks, and **`llm.stream_reply`** appends them to the system instruction before calling Gemini.
+- **Two regions**: **Gemini** uses **`GCP_REGION`** (default `us-central1` on Cloud Run). **Retrieval** initializes Vertex in the **location embedded in `RAG_CORPUS_RESOURCE`** (e.g. `.../locations/europe-west4/ragCorpora/...` when using a backup ingest region). See `rag_vertex.py` and `terraform/README.md` (RAG backup region).
+- **Tuning**: **`RAG_TOP_K`**, optional **`RAG_VECTOR_DISTANCE_THRESHOLD`** (see `main.py` / `.env.example`).
+- **`RAG_CORPUS_RESOURCE` on Cloud Run**: Set via Terraform **`rag_corpus_resource_name`** → env on the service. **Deploy API** can also pass repository **Variable** `RAG_CORPUS_RESOURCE` on each deploy (`gcloud run services update` merges env vars); keep this aligned with the corpus you actually imported.
+- **Terraform remote state**: Optional GCS backend — copy `terraform/backend.tf.example` to `backend.tf` after creating a state bucket (`terraform/versions.tf`).
 
-## Deployment pipeline
+## Deployment pipeline (API image)
 
 ```mermaid
 flowchart LR
-    subgraph repo["This repository"]
-        Src["src/digital_twin/**\nDockerfile\npyproject.toml"]
+    subgraph trigger["Trigger"]
+        Push["Push to main\n(paths: src/**, Dockerfile,\npyproject.toml, workflow)"]
+        WD["workflow_dispatch"]
     end
 
-    Push["Push to main\n(or workflow_dispatch)"] --> GHA[".github/workflows/deploy-api.yml"]
-    Src --> GHA
-    GHA --> Build["docker build\nlinux/amd64"]
-    Build --> PushImg["docker push\nREGION-docker.pkg.dev/.../api:SHA"]
-    PushImg --> Deploy["gcloud run deploy\n→ new revision"]
+    subgraph gha["deploy-api.yml"]
+        Auth["WIF: secrets\nGCP_WORKLOAD_IDENTITY_PROVIDER,\nGCP_SERVICE_ACCOUNT_EMAIL,\nGCP_PROJECT_ID"]
+        Build["docker build\nlinux/amd64"]
+        PushImg["docker push\nREGION-docker.pkg.dev/.../api:SHA"]
+        Upd["gcloud run services update\nimage + env vars"]
+    end
+
+    Push --> gha
+    WD --> gha
+    Auth --> Build --> PushImg --> Upd
 ```
 
-Authentication uses **Workload Identity Federation** from GitHub Actions into GCP (see `docs/WORKING.md`).
+On deploy, **environment variables** are applied with a **custom delimiter** (`^;^`) so **`CORS_ALLOWED_ORIGINS`** can contain commas. Optional repository **Variables** passed into that step include **`RAG_CORPUS_RESOURCE`** and **`CORS_ALLOWED_ORIGINS`** (see `.github/workflows/deploy-api.yml`).
+
+Secret names and copying Terraform outputs into GitHub are documented in **`terraform/README.md`** and helper **`scripts/print-github-actions-secrets.sh`**.
+
+## RAG corpus lifecycle
+
+Typical operator flow (details in **`terraform/README.md`** → RAG):
+
+```mermaid
+flowchart LR
+    subgraph create["First-time / full ingest"]
+        A["scripts/ingest_rag_corpus.py\n--project-id … --files …"]
+        A --> B["Upload to corpus bucket"]
+        B --> C["create_corpus + import_files"]
+        C --> D["Print RAG_CORPUS_RESOURCE\n→ tfvars / GitHub Variable / .env"]
+    end
+
+    subgraph refresh["Re-import after gs:// changes"]
+        E["Upload new objects\ne.g. gsutil cp rag-sources/* …"]
+        F["GitHub: Ingest RAG corpus\nOR local script\n--skip-upload --files …"]
+        E --> F
+    end
+```
+
+- **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Requires the same **secrets** as Deploy API plus repository **Variables** **`CORPUS_BUCKET_NAME`** and **`RAG_CORPUS_RESOURCE`**; optional **`RAG_INGEST_REGION`** (default **`europe-west4`** if not inferable). The checked-in step runs **`ingest_rag_corpus.py`** with **`--skip-upload`** (assumes objects already in the bucket); adjust **`--files`** in the workflow if you need different globs.
+- **Local full ingest**: **`pip install -e .`**, ADC (`gcloud auth application-default login`), then **`scripts/ingest_rag_corpus.py`** (can create corpus, upload, import, and optionally ensure RAG engine tier — see script docstring).
 
 ## In-process architecture (API service)
 
@@ -71,19 +118,25 @@ flowchart TB
 
     RL["rate_limit\nper client IP\n(in-memory window)"]
     SS["session_store\nUUID sessions\nGCS or memory"]
-    LLM["llm + rag_vertex\nRAG retrieval + Vertex `google-genai`\nstream_reply"]
+
+    subgraph llm_pipe["llm.stream_reply (llm.py)"]
+        RAG["rag_vertex.fetch_rag_context\nretrieval_query →\nformatted block"]
+        GEN["google-genai\nGemini generate_content_stream"]
+        RAG --> GEN
+    end
 
     MW --> G
     MW --> P
     P --> RL
     P --> SS
-    P --> LLM
+    P --> llm_pipe
     G --> SS
-    LLM --> SS
 ```
 
-- **Rate limiting** is **per Cloud Run instance** (in-memory); under multiple instances, effective limits scale with replicas.
-- **POST /api/chat** runs model generation and persistence off the event loop via `asyncio.to_thread` so the server stays responsive while calling blocking SDK code.
+**`llm.stream_reply`** runs **`rag_vertex.fetch_rag_context`** first when **`RAG_CORPUS_RESOURCE`** is set (merges chunks into the system instruction), then calls **`google.genai`** with **`GCP_REGION`** for the model client. Session **save** after the stream is handled in **`main.py`**, not inside **`llm.py`**.
+
+- **Rate limiting** is **per Cloud Run instance**; more replicas mean higher aggregate allowance unless you add shared state.
+- **POST /api/chat** uses **`asyncio.to_thread`** for model work and session persistence so the event loop stays responsive.
 
 ## Chat request flow (POST)
 
@@ -93,17 +146,17 @@ sequenceDiagram
     participant API as FastAPI
     participant RL as rate_limit
     participant SS as session_store
-    participant V as Vertex Gemini
     participant R as Vertex RAG
+    participant V as Vertex Gemini
 
     C->>API: POST /api/chat JSON {prompt}\nHeader X-Session-Id (optional)
     API->>RL: check_rate_limit(ip)
     RL-->>API: ok or 429
     API->>SS: load_messages(session_id)
     SS-->>API: prior turns
-    API->>R: retrieval_query (if corpus configured)
-    R-->>API: text chunks
-    API->>V: generate_content_stream\n(system + RAG context + history + prompt)
+    API->>R: retrieval_query\n(corpus location from resource name)\noptional if RAG_CORPUS_RESOURCE unset
+    R-->>API: context chunks → system augmentation
+    API->>V: generate_content_stream\n(system + history + prompt)\nGemini region = GCP_REGION
     V-->>API: text chunks
     API-->>C: text/event-stream\n(data: {"text": ...})\n then complete
     API->>SS: save_messages(session_id, updated history)
@@ -113,13 +166,20 @@ sequenceDiagram
 
 | Path | Role |
 |------|------|
-| `src/digital_twin/main.py` | HTTP API, SSE assembly |
-| `src/digital_twin/llm.py` | `system.md` + optional RAG context; Vertex Gemini streaming |
-| `src/digital_twin/rag_vertex.py` | `rag.retrieval_query` into corpus |
+| `src/digital_twin/main.py` | HTTP API, SSE, env wiring |
+| `src/digital_twin/llm.py` | System prompt; optional RAG block; Vertex Gemini streaming |
+| `src/digital_twin/rag_vertex.py` | `vertexai.rag.retrieval_query` + chunk formatting |
 | `src/digital_twin/session_store.py` | Session JSON in GCS or memory |
 | `src/digital_twin/rate_limit.py` | Per-IP RPM limit |
-| `src/digital_twin/prompts/` | `system.md` only in git; local uploads gitignored |
-| `terraform/` | Cloud Run, buckets, Vertex/RAG infra, IAM, registry |
-| `.github/workflows/deploy-api.yml` | CI/CD to Artifact Registry + Cloud Run |
+| `src/digital_twin/prompts/` | `system.md` (packaged in wheel) |
+| `rag-sources/` | Curated corpus files for upload / ingest (e.g. `knowledge.txt`) |
+| `scripts/ingest_rag_corpus.py` | Upload to corpus bucket, corpus create/import, CLI |
+| `scripts/print-github-actions-secrets.sh` | Helper to print Terraform outputs for GitHub secrets |
+| `terraform/` | Cloud Run, buckets, RAG engine, IAM, Artifact Registry, optional WIF |
+| `terraform/backend.tf.example` | Template for GCS remote state |
+| `.github/workflows/deploy-api.yml` | Build/push image, update Cloud Run |
+| `.github/workflows/ingest-rag-corpus.yml` | Manual RAG re-import from bucket |
 
-For day-to-day operations and secrets, see `docs/WORKING.md`.
+Runtime dependencies include **`google-genai`** (Gemini) and **`google-cloud-aiplatform`** (Vertex RAG client used by `rag_vertex` / ingest script). See `pyproject.toml`.
+
+For day-to-day operations, secrets, and backlog items, see **`docs/WORKING.md`** and **`docs/REMAINING_WORK.md`**.
