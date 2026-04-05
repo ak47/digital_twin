@@ -87,17 +87,8 @@ jobs:
           RAG_CORPUS_RESOURCE: ${{ vars.RAG_CORPUS_RESOURCE }}
           # Optional override; default matches terraform/variables.tf (comma in value → use ^;^ below).
           CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
-          # Idle digest: Gmail (GMAIL_SECRET_NAME + GMAIL_DELEGATED_USER) — see README.
-          RESUME_BOT_DIGEST_EMAIL_TO: ${{ vars.RESUME_BOT_DIGEST_EMAIL_TO }}
-          GMAIL_DELEGATED_USER: ${{ vars.GMAIL_DELEGATED_USER }}
-          GMAIL_SECRET_NAME: ${{ vars.GMAIL_SECRET_NAME }}
         run: |
           set -eu
-          # Trim pasted GitHub Variables (trailing space/newline breaks gcloud secret names).
-          _trim() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
-          GMAIL_SECRET_NAME="$(_trim "${GMAIL_SECRET_NAME:-}")"
-          GMAIL_DELEGATED_USER="$(_trim "${GMAIL_DELEGATED_USER:-}")"
-          RESUME_BOT_DIGEST_EMAIL_TO="$(_trim "${RESUME_BOT_DIGEST_EMAIL_TO:-}")"
           # Default gcloud --update-env-vars splits on commas between KEY=value pairs, so
           # CORS_ALLOWED_ORIGINS=https://a,https://b cannot use the comma form. Custom delimiter ^;^
           # keeps one env value with commas inside.
@@ -106,22 +97,28 @@ jobs:
           if [ -n "${RAG_CORPUS_RESOURCE}" ]; then
             EXTRA=";RAG_CORPUS_RESOURCE=${RAG_CORPUS_RESOURCE}"
           fi
-          SECRET_ARGS=()
-          if [ -n "${RESUME_BOT_DIGEST_EMAIL_TO}" ]; then
-            EXTRA="${EXTRA};RESUME_BOT_DIGEST_EMAIL_TO=${RESUME_BOT_DIGEST_EMAIL_TO}"
-            if [ -n "${GMAIL_SECRET_NAME}" ] && [ -n "${GMAIL_DELEGATED_USER}" ]; then
-              EXTRA="${EXTRA};GMAIL_DELEGATED_USER=${GMAIL_DELEGATED_USER}"
-              SECRET_ARGS=(--set-secrets="GMAIL_SERVICE_ACCOUNT_JSON=${GMAIL_SECRET_NAME}:latest")
-            fi
+          gcloud run services update "${SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE}" \
+            --update-env-vars "^;^GCP_PROJECT_ID=${PROJECT_ID};GCP_REGION=${REGION};CORS_ALLOWED_ORIGINS=${CORS}${EXTRA}" \
+            --quiet
+
+      # Idle session digest runs in a Cloud Run Job (Terraform digest_job.tf), not the API service.
+      - name: Update session digest job image (optional)
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          SESSION_DIGEST_JOB_NAME: ${{ vars.SESSION_DIGEST_JOB_NAME }}
+        run: |
+          set -eu
+          _trim() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          JOB="$(_trim "${SESSION_DIGEST_JOB_NAME:-}")"
+          if [ -z "${JOB}" ]; then
+            echo "SESSION_DIGEST_JOB_NAME unset; skip digest job image update"
+            exit 0
           fi
-          GCLOUD=(gcloud run services update "${SERVICE}"
-            --project="${PROJECT_ID}"
-            --region="${REGION}"
-            --image="${IMAGE}"
-            --update-env-vars "^;^GCP_PROJECT_ID=${PROJECT_ID};GCP_REGION=${REGION};CORS_ALLOWED_ORIGINS=${CORS}${EXTRA}"
-            --quiet)
-          if [ "${#SECRET_ARGS[@]}" -gt 0 ]; then
-            "${GCLOUD[@]}" "${SECRET_ARGS[@]}"
-          else
-            "${GCLOUD[@]}"
-          fi
+          gcloud run jobs update "${JOB}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE}" \
+            --quiet

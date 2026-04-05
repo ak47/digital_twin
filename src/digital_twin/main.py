@@ -15,21 +15,12 @@ Env (injected by Terraform / Cloud Run):
   RATE_LIMIT_REQUESTS_PER_MINUTE — default 30
   SYSTEM_PROMPT_PATH      — override path to system.md
 
-Idle session digest email (optional; GCS bucket + RESUME_BOT_DIGEST_EMAIL_TO + Gmail):
-
-  Google Workspace Gmail (domain-wide delegation):
-    GMAIL_DELEGATED_USER          — Workspace user to send as (e.g. resume-bot@no-ego.net)
-    GMAIL_SERVICE_ACCOUNT_JSON    — full SA key JSON string (e.g. from Secret Manager env)
-    GMAIL_SERVICE_ACCOUNT_KEY_FILE — or path to key file (local dev)
-
-  RESUME_BOT_DIGEST_IDLE_MINUTES — idle before send (default 60)
-  RESUME_BOT_DIGEST_SCAN_INTERVAL_SECONDS — background scan period (default 300)
-  RESUME_BOT_DIGEST_TIMEZONE — IANA tz for email subject / attachment timestamps (default America/Los_Angeles)
+Idle session digest email is not run inside this API process. Use Terraform Cloud Run Job +
+Cloud Scheduler (see terraform/digest_job.tf and README).
 """
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import os
@@ -39,7 +30,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from digital_twin import llm, rate_limit, session_digest, session_store
+from digital_twin import llm, rate_limit, session_store
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -82,25 +73,7 @@ def _cors_origins() -> list[str]:
 # Regex covers apex + subdomains on no-ego.net so www works even if env is mis-set.
 _NO_EGO_ORIGIN_RE = r"^https://([a-z0-9-]+\.)*no-ego\.net$"
 
-
-@contextlib.asynccontextmanager
-async def _lifespan(_app: FastAPI):
-    task: asyncio.Task[None] | None = None
-    if session_digest.digest_feature_configured():
-        task = asyncio.create_task(session_digest.digest_loop())
-        logger.info(
-            "Resume bot idle digest: enabled (%s)", session_digest.digest_email_provider()
-        )
-    yield
-    if task is not None:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-
-
-app = FastAPI(title="digital-twin-api", version="0.2.0", lifespan=_lifespan)
+app = FastAPI(title="digital-twin-api", version="0.2.0")
 
 _origins = _cors_origins()
 if _origins:

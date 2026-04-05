@@ -108,16 +108,16 @@ Terraform may still reference a placeholder image until you push your image and 
 
 ## Idle session digest (email transcript)
 
-When **GCS sessions** are enabled, you can get a **plain-text attachment** of each chat after **no activity for 1 hour** (configurable). The API scans GCS periodically in the background.
+When **GCS sessions** are enabled, you can get a **plain-text attachment** of each chat after **no activity for 1 hour** (configurable). **Production:** Terraform provisions a **Cloud Run Job** (`terraform/digest_job.tf`) and **Cloud Scheduler** triggers it on a cron; the **API service does not** run a background scanner (single worker, no duplicate sends from multiple API replicas).
 
-**Email provider:** **`GMAIL_DELEGATED_USER`** plus **`GMAIL_SERVICE_ACCOUNT_JSON`** (or a Secret Manager–backed env on Cloud Run). Mail is sent with the **Gmail API** as that Workspace user.
+**Email provider:** **`GMAIL_DELEGATED_USER`** plus **`GMAIL_SERVICE_ACCOUNT_JSON`** (from Secret Manager on the job). Mail is sent with the **Gmail API** as that Workspace user.
 
 Subject line: **`resume bot chat YYYY-MM-DD HH:MM PST`** (or **PDT**) — **US Pacific** by default (`RESUME_BOT_DIGEST_TIMEZONE`, default `America/Los_Angeles`). Body is short; the **thread is in the `.txt` attachment**.
 
 ### Google Workspace (no-ego.net)
 
 1. **Workspace:** Create a mailbox to send from, e.g. **`resume-bot@no-ego.net`** (or use an existing user).
-2. **GCP (same project as Cloud Run):** Enable **[Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com)**.
+2. **GCP (same project as Cloud Run):** **[Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com)** is enabled by Terraform (`terraform/apis.tf`) when you use this stack.
 3. **Service account:** Create one. In GCP → **IAM & Admin** → **Service accounts** → open the SA → **Edit** → enable **Domain-wide delegation** (Google Workspace), save. Download a **JSON key**. You need the **numeric Client ID** (shown in the console or as `client_id` in the JSON).
 4. **Workspace Admin** (admin.google.com) → **Security** → **Access and data control** → **API controls** → **Domain-wide delegation** → **Manage domain-wide delegation** → **Add new**:
    - Client ID: the SA’s numeric `client_id`
@@ -126,26 +126,21 @@ Subject line: **`resume bot chat YYYY-MM-DD HH:MM PST`** (or **PDT**) — **US P
 
    ```bash
    gcloud secrets create gmail-digest-sa --data-file=./your-sa.json
-   gcloud secrets add-iam-policy-binding gmail-digest-sa \
-     --member="serviceAccount:YOUR_CLOUD_RUN_RUNTIME_SA@PROJECT.iam.gserviceaccount.com" \
-     --role="roles/secretmanager.secretAccessor"
    ```
 
-   Use the **Cloud Run service account** from Terraform output `cloud_run_service_account` (or the SA shown on the Cloud Run service).
+   Terraform grants the **Cloud Run runtime** service account (**`cloud_run_service_account`** output) **`secretAccessor`** on that secret when digest is enabled.
 
-6. **GitHub Actions — Variables:** `RESUME_BOT_DIGEST_EMAIL_TO`, **`GMAIL_DELEGATED_USER`** (e.g. `resume-bot@no-ego.net`), **`GMAIL_SECRET_NAME`** — the Secret Manager **secret id** you chose at creation (e.g. `gmail-digest-sa`). **Not** your GCP project id, **not** the numeric project number (e.g. not `597516825296`), **not** the full `projects/.../secrets/...` path.
+6. **Terraform** (see **`terraform/README.md`** → *Idle session digest*): set **`session_digest_enabled = true`** and **`session_digest_gmail_secret_id`** (the Secret Manager **secret id**, e.g. `gmail-digest-sa` — **not** the project number, **not** the full `projects/.../secrets/...` path), plus **`session_digest_delegated_user`** and **`session_digest_email_to`**. Run **`terraform apply`**.
 
-Deploy injects **`GMAIL_DELEGATED_USER`** and mounts the secret as env **`GMAIL_SERVICE_ACCOUNT_JSON`**.
+7. **GitHub Actions — Variable:** **`SESSION_DIGEST_JOB_NAME`** = Terraform output **`session_digest_job_name`** (e.g. `digital-twin-session-digest`). Deploy workflow updates this job’s image on each push so the job runs the same container build as the API.
 
-**Local dev:** `export GMAIL_SERVICE_ACCOUNT_KEY_FILE=/path/to/sa.json` and `GMAIL_DELEGATED_USER=resume-bot@no-ego.net`.
+**Local dev (one-shot):** `export GMAIL_SERVICE_ACCOUNT_KEY_FILE=/path/to/sa.json`, **`GMAIL_DELEGATED_USER`**, **`RESUME_BOT_DIGEST_EMAIL_TO`**, **`GCS_SESSIONS_BUCKET`**, then:
 
-Omit digest variables/secrets to leave the feature off.
+`python -m digital_twin.run_session_digest`
 
-### Optional env
+### Optional tuning (Terraform → job env)
 
-`RESUME_BOT_DIGEST_IDLE_MINUTES` (default `60`), `RESUME_BOT_DIGEST_SCAN_INTERVAL_SECONDS` (default `300`), `RESUME_BOT_DIGEST_TIMEZONE`.
-
-**Note:** With **multiple Cloud Run instances**, duplicate digests are unlikely but possible; use **`max_instance_count = 1`** if you need a hard guarantee.
+**`session_digest_idle_minutes`**, **`session_digest_display_timezone`** (maps to **`RESUME_BOT_DIGEST_TIMEZONE`**), **`session_digest_schedule`** / **`session_digest_scheduler_timezone`** for the Scheduler cron.
 
 ## Docs
 

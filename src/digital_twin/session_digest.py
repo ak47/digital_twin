@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging
@@ -116,13 +115,6 @@ def _idle_delta() -> timedelta:
     except ValueError:
         minutes = 60
     return timedelta(minutes=max(1, minutes))
-
-
-def _scan_interval_s() -> float:
-    try:
-        return float(os.environ.get("RESUME_BOT_DIGEST_SCAN_INTERVAL_SECONDS", "300").strip())
-    except ValueError:
-        return 300.0
 
 
 def transcript_attachment_text(
@@ -345,15 +337,3 @@ def scan_and_send_idle_digests() -> None:
             logger.exception(
                 "digest: GCS CAS failed for session %s (duplicate instance?): %s", sid, e
             )
-
-
-async def digest_loop() -> None:
-    interval = _scan_interval_s()
-    while True:
-        try:
-            await asyncio.to_thread(scan_and_send_idle_digests)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("digest scan loop error")
-        await asyncio.sleep(interval)

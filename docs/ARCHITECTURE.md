@@ -23,6 +23,8 @@ flowchart TB
         end
         SM["Secret Manager\noptional: SA JSON\nfor Gmail digest"]
         Gmail["Gmail API\nsend as delegated\nWorkspace user"]
+        CR_JOB["Cloud Run Job\nsession digest\n(Terraform)"]
+        Sched["Cloud Scheduler\ntriggers digest job"]
     end
 
     subgraph github["GitHub Actions"]
@@ -46,9 +48,11 @@ flowchart TB
     CR -->|generate_content_stream\nGCP_REGION| Vertex
     CR -->|retrieval_query\nregion from corpus resource name| Corpus
     CR -->|read/write when bucket set| GCS_S
-    CR -.->|optional: list blobs,\nconditional send + CAS update| GCS_S
-    CR -.->|when digest enabled:\nGMAIL_SERVICE_ACCOUNT_JSON| SM
-    CR -.->|domain-wide delegation| Gmail
+    Sched -->|OAuth POST :run| CR_JOB
+    CR_JOB -->|list blobs,\nconditional send + CAS| GCS_S
+    CR_JOB -.->|GMAIL_SERVICE_ACCOUNT_JSON| SM
+    CR_JOB -.->|domain-wide delegation| Gmail
+    DeployWF -->|optional: same image| CR_JOB
     IngestPy --> GCS_C
     IngestPy --> Corpus
 ```
@@ -56,7 +60,7 @@ flowchart TB
 **Notes**
 
 - **Sessions**: If `GCS_SESSIONS_BUCKET` is unset, history stays in **process memory** (lost on recycle/scale-out). Session JSON in GCS includes **`last_activity_at`** (set on each save) for digest eligibility.
-- **Idle session digest (optional)**: When **`GCS_SESSIONS_BUCKET`**, **`RESUME_BOT_DIGEST_EMAIL_TO`**, and **Gmail** credentials are all configured, the app starts a **background loop** (`session_digest.digest_loop`) on startup. It periodically scans session blobs under the sessions prefix; after **`RESUME_BOT_DIGEST_IDLE_MINUTES`** (default 60) without activity, it emails a **plain-text transcript attachment** via **Gmail API** using a **service account** with **domain-wide delegation** as **`GMAIL_DELEGATED_USER`**. Successful sends set **`idle_digest_sent_at`** on the blob with **generation-match (CAS)** to reduce duplicate sends. **Requires GCS** (not in-memory sessions). With **multiple Cloud Run instances**, rare duplicate digests are possible unless you cap instances (see **`README.md`**).
+- **Idle session digest (optional)**: **Cloud Scheduler** invokes a **Cloud Run Job** (Terraform **`digest_job.tf`**) that runs **`scan_and_send_idle_digests`** once per execution. After **`RESUME_BOT_DIGEST_IDLE_MINUTES`** (default 60) without activity on a session blob, it emails a **plain-text transcript attachment** via **Gmail** (**domain-wide delegation** as **`GMAIL_DELEGATED_USER`**). Successful sends set **`idle_digest_sent_at`** with **generation-match (CAS)**. **Requires GCS** sessions. The **API service** does not run digest logic, so **multiple API replicas** do not multiply scanners.
 - **RAG is optional**: If `RAG_CORPUS_RESOURCE` is unset, answers use **`system.md` only** (no retrieval). When set, `rag_vertex.fetch_rag_context` runs **`vertexai.rag.retrieval_query`**, formats chunks, and **`llm.stream_reply`** appends them to the system instruction before calling Gemini.
 - **Two regions**: **Gemini** uses **`GCP_REGION`** (default `us-central1` on Cloud Run). **Retrieval** initializes Vertex in the **location embedded in `RAG_CORPUS_RESOURCE`** (e.g. `.../locations/europe-west4/ragCorpora/...` when using a backup ingest region). See `rag_vertex.py` and `terraform/README.md` (RAG backup region).
 - **Tuning**: **`RAG_TOP_K`**, optional **`RAG_VECTOR_DISTANCE_THRESHOLD`** (see `main.py` / `.env.example`).
@@ -77,14 +81,16 @@ flowchart LR
         Build["docker build\nlinux/amd64"]
         PushImg["docker push\nREGION-docker.pkg.dev/.../api:SHA"]
         Upd["gcloud run services update\nimage + env vars"]
+        JobImg["optional: gcloud run jobs update\nSESSION_DIGEST_JOB_NAME"]
     end
 
     Push --> gha
     WD --> gha
     Auth --> Build --> PushImg --> Upd
+    PushImg --> JobImg
 ```
 
-On deploy, **environment variables** are applied with a **custom delimiter** (`^;^`) so **`CORS_ALLOWED_ORIGINS`** can contain commas. Optional repository **Variables** include **`RAG_CORPUS_RESOURCE`**, **`CORS_ALLOWED_ORIGINS`**, and for the digest feature **`RESUME_BOT_DIGEST_EMAIL_TO`**, **`GMAIL_DELEGATED_USER`**, **`GMAIL_SECRET_NAME`** (Secret Manager **secret id**). When Gmail variables are set alongside **`RESUME_BOT_DIGEST_EMAIL_TO`**, the workflow adds **`--set-secrets=GMAIL_SERVICE_ACCOUNT_JSON=GMAIL_SECRET_NAME:latest`** so the runtime receives the SA JSON without putting it in plain env (see `.github/workflows/deploy-api.yml`).
+On deploy, **environment variables** for the **API service** use a **custom delimiter** (`^;^`) so **`CORS_ALLOWED_ORIGINS`** can contain commas. Optional repository **Variables** include **`RAG_CORPUS_RESOURCE`** and **`CORS_ALLOWED_ORIGINS`**. **Idle digest** Gmail and recipients are configured on the **Cloud Run Job** via Terraform, not the deploy workflow. If **`SESSION_DIGEST_JOB_NAME`** is set, the workflow also updates that job’s **image** to match the API image.
 
 Secret names and copying Terraform outputs into GitHub are documented in **`terraform/README.md`** and helper **`scripts/print-github-actions-secrets.sh`**.
 
@@ -113,20 +119,17 @@ flowchart LR
 
 ## Idle session digest (email)
 
-Background feature in **`session_digest.py`**, started from FastAPI **`lifespan`** in **`main.py`** when **`session_digest.digest_feature_configured()`** is true.
+Implemented in **`session_digest.py`** (`scan_and_send_idle_digests`). **Production** runs it from **`python -m digital_twin.run_session_digest`** inside a **Cloud Run Job** on a **Scheduler** cadence (see **`terraform/digest_job.tf`**). The API does not start a background task.
 
 ```mermaid
 flowchart TB
-    subgraph startup["App lifespan"]
-        L["FastAPI startup"]
-        C{"digest_feature_configured?"}
-        Loop["session_digest.digest_loop\nasync sleep + to_thread scan"]
-        L --> C
-        C -->|yes| Loop
-        C -->|no| Idle["no background task"]
+    subgraph sched["GCP (Terraform)"]
+        S["Cloud Scheduler\ncron → POST :run"]
+        J["Cloud Run Job\nrun_session_digest"]
+        S --> J
     end
 
-    subgraph scan["scan_and_send_idle_digests (per tick)"]
+    subgraph scan["scan_and_send_idle_digests"]
         List["List GCS blobs\nprefix sessions/"]
         Each["For each session JSON"]
         Check["Idle since last_activity_at?\nnot already emailed for this activity?"]
@@ -136,24 +139,23 @@ flowchart TB
         Check -->|send| Mail --> CAS
     end
 
-    Loop --> scan
+    J --> scan
 ```
 
-**Configuration (all required to enable)**
+**Configuration (production via Terraform variables → job env)**
 
-| Variable / secret | Role |
-|-------------------|------|
-| `GCS_SESSIONS_BUCKET` | Session persistence (digest does not run on in-memory-only mode). |
-| `RESUME_BOT_DIGEST_EMAIL_TO` | Comma-separated recipient inbox(es). |
-| `GMAIL_DELEGATED_USER` | Workspace user the SA impersonates (sender). |
-| `GMAIL_SERVICE_ACCOUNT_JSON` | SA key JSON (production: from Secret Manager via deploy **`--set-secrets`**). |
-| `GMAIL_SERVICE_ACCOUNT_KEY_FILE` | Local dev: path to SA JSON instead of inline env. |
+| Terraform / runtime | Role |
+|----------------------|------|
+| `GCS_SESSIONS_BUCKET` (from Terraform on job) | Session persistence (digest skips in-memory-only setups). |
+| `session_digest_email_to` → `RESUME_BOT_DIGEST_EMAIL_TO` | Recipients. |
+| `session_digest_delegated_user` → `GMAIL_DELEGATED_USER` | Workspace sender (SA impersonation). |
+| `session_digest_gmail_secret_id` → Secret env `GMAIL_SERVICE_ACCOUNT_JSON` | SA key JSON from Secret Manager. |
 
-One of **`GMAIL_SERVICE_ACCOUNT_JSON`** or **`GMAIL_SERVICE_ACCOUNT_KEY_FILE`** must be available at runtime (with **`GMAIL_DELEGATED_USER`**).
+**Local dev:** `GMAIL_SERVICE_ACCOUNT_KEY_FILE` plus the same env names as above.
 
-**Optional tuning**: `RESUME_BOT_DIGEST_IDLE_MINUTES` (default 60), `RESUME_BOT_DIGEST_SCAN_INTERVAL_SECONDS` (default 300), `RESUME_BOT_DIGEST_TIMEZONE` (subject/attachment display time, default `America/Los_Angeles`), `GCS_SESSIONS_PREFIX` (default `sessions`).
+**Optional tuning**: Terraform **`session_digest_idle_minutes`**, **`session_digest_display_timezone`** (`RESUME_BOT_DIGEST_TIMEZONE`), **`session_digest_schedule`** / **`session_digest_scheduler_timezone`**, `GCS_SESSIONS_PREFIX` (default `sessions`).
 
-**Runbook**: Workspace admin setup, Gmail API enablement, Secret Manager, and GitHub Variables are in **`README.md`** → *Idle session digest*.
+**Runbook**: **`README.md`** → *Idle session digest*; Terraform **`terraform/README.md`** → *Idle session digest*.
 
 ## In-process architecture (API service)
 
@@ -164,12 +166,10 @@ flowchart TB
         H["GET/HEAD /health"]
         G["GET /api/chat\n(load history)"]
         P["POST /api/chat\n(SSE stream)"]
-        Life["lifespan:\noptional digest_loop task"]
     end
 
     RL["rate_limit\nper client IP\n(in-memory window)"]
     SS["session_store\nUUID sessions\nGCS or memory"]
-    Dig["session_digest\nGCS scan + Gmail"]
 
     subgraph llm_pipe["llm.stream_reply (llm.py)"]
         RAG["rag_vertex.fetch_rag_context\nretrieval_query →\nformatted block"]
@@ -177,7 +177,6 @@ flowchart TB
         RAG --> GEN
     end
 
-    Life -.->|if configured| Dig
     MW --> G
     MW --> P
     P --> RL

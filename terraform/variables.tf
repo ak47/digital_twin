@@ -92,3 +92,52 @@ variable "github_repository" {
     error_message = "github_repository must be empty or owner/name (alphanumeric, dots, hyphens, underscores)."
   }
 }
+
+variable "session_digest_enabled" {
+  description = "Provision Cloud Run Job + Cloud Scheduler for idle session transcript emails (GCS + Gmail)."
+  type        = bool
+  default     = false
+}
+
+variable "session_digest_gmail_secret_id" {
+  description = "Secret Manager secret id (short name, not project number) holding the Gmail service account JSON key."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "session_digest_delegated_user" {
+  description = "Workspace user to impersonate when sending mail (GMAIL_DELEGATED_USER)."
+  type        = string
+  default     = ""
+}
+
+variable "session_digest_email_to" {
+  description = "Comma-separated digest recipients (RESUME_BOT_DIGEST_EMAIL_TO)."
+  type        = string
+  default     = ""
+}
+
+variable "session_digest_schedule" {
+  description = "Cloud Scheduler cron (interpreted in session_digest_scheduler_timezone)."
+  type        = string
+  default     = "*/15 * * * *"
+}
+
+variable "session_digest_scheduler_timezone" {
+  description = "IANA timezone for the scheduler cron (e.g. America/Los_Angeles or Etc/UTC)."
+  type        = string
+  default     = "Etc/UTC"
+}
+
+variable "session_digest_idle_minutes" {
+  description = "RESUME_BOT_DIGEST_IDLE_MINUTES — idle window before emailing a session."
+  type        = number
+  default     = 60
+}
+
+variable "session_digest_display_timezone" {
+  description = "RESUME_BOT_DIGEST_TIMEZONE — IANA tz for email subject / attachment timestamps."
+  type        = string
+  default     = "America/Los_Angeles"
+}

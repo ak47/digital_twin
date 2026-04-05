@@ -12,7 +12,7 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 
 RUN pip install . \
-    && python -c "from digital_twin.main import app; print('import ok:', app.title)"
+    && python -c "from digital_twin.main import app; import digital_twin.run_session_digest; print('import ok:', app.title)"
 
 # Cloud Run injects PORT at runtime (default 8080 for local runs).
 ENV PORT=8080

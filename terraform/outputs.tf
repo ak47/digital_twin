@@ -55,3 +55,8 @@ output "github_actions_deployer_email" {
   description = "Repository secret GCP_SERVICE_ACCOUNT_EMAIL. Null if github_repository is empty (WIF disabled)."
   value       = one(google_service_account.github_deploy[*].email)
 }
+
+output "session_digest_job_name" {
+  description = "Set GitHub Actions variable SESSION_DIGEST_JOB_NAME to this so deploy-api.yml updates the job image after each push."
+  value       = local.session_digest_ready ? google_cloud_run_v2_job.session_digest[0].name : null
+}
