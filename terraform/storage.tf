@@ -12,7 +12,7 @@ resource "google_storage_bucket" "corpus" {
   name          = local.corpus_bucket_name
   location      = var.region
   project       = var.project_id
-  force_destroy = false
+  force_destroy = var.bucket_force_destroy
 
   uniform_bucket_level_access = true
 
@@ -24,7 +24,7 @@ resource "google_storage_bucket" "sessions" {
   name          = local.sessions_bucket_name
   location      = var.region
   project       = var.project_id
-  force_destroy = false
+  force_destroy = var.bucket_force_destroy
 
   uniform_bucket_level_access = true
 

@@ -55,6 +55,12 @@ variable "session_retention_days" {
   default     = 3
 }
 
+variable "bucket_force_destroy" {
+  description = "If true, Terraform may delete corpus and sessions buckets even when non-empty. Use only for teardown or project moves; risky for the corpus bucket (curated data)."
+  type        = bool
+  default     = false
+}
+
 variable "rag_engine_tier" {
   description = "Vertex AI RAG managed DB tier: BASIC (cost-friendly) or SCALED (production)."
   type        = string

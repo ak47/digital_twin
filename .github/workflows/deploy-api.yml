@@ -83,12 +83,17 @@ jobs:
       - name: Deploy to Cloud Run
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          # Optional: same value as TF_VAR_rag_corpus_resource_name in local .env (Settings → Variables).
+          RAG_CORPUS_RESOURCE: ${{ vars.RAG_CORPUS_RESOURCE }}
         run: |
-          # Vertex needs project/region on the revision. CORS for no-ego is defaulted in app code when
-          # CORS_ALLOWED_ORIGINS is unset (see main.py); avoid commas in --update-env-vars (gcloud breaks).
+          # Vertex needs project/region on the revision. Append RAG_CORPUS_RESOURCE only if set (value has no commas).
+          ENV_VARS="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION}"
+          if [ -n "${RAG_CORPUS_RESOURCE}" ]; then
+            ENV_VARS="${ENV_VARS},RAG_CORPUS_RESOURCE=${RAG_CORPUS_RESOURCE}"
+          fi
           gcloud run services update "${SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${IMAGE}" \
-            --update-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION}" \
+            --update-env-vars="${ENV_VARS}" \
             --quiet
