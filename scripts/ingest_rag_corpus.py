@@ -40,6 +40,11 @@ def _is_rag_region_allowlist_error(exc: BaseException) -> bool:
     return "allowlisted" in msg and "rag engine" in msg
 
 
+def _is_rag_engine_unprovisioned_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "unprovisioned" in msg and "rag engine" in msg
+
+
 def _terraform_corpus_bucket(repo_root: Path) -> str:
     tf_dir = repo_root / "terraform"
     # Terraform expects -chdir=DIR as one argv token (not "-chdir" "DIR").
@@ -196,6 +201,19 @@ def main() -> None:
         )
         raise SystemExit(1)
 
+    def _exit_rag_engine_unprovisioned(rag_region: str) -> None:
+        print(
+            f"Vertex reports RAG Engine is unprovisioned in {rag_region!r} (no active Basic/Scaled tier).\n"
+            "\n"
+            "Re-create the regional config from Terraform (pick the line that matches your --region):\n"
+            f'  cd terraform && terraform apply -replace=\'google_vertex_ai_rag_engine_config.main["{rag_region}"]\'\n'
+            "\n"
+            "If it still fails, confirm rag_engine_tier is BASIC or SCALED in tfvars, then apply again. "
+            "See terraform/README.md → RAG backup region (troubleshooting).\n",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
     try:
         rag_corpus = rag.create_corpus(
             display_name=args.display_name,
@@ -207,10 +225,16 @@ def main() -> None:
         if _is_rag_region_allowlist_error(e):
             _exit_rag_region_allowlist(args.region)
         raise
+    except gcp_exceptions.FailedPrecondition as e:
+        if _is_rag_engine_unprovisioned_error(e):
+            _exit_rag_engine_unprovisioned(args.region)
+        raise
     except RuntimeError as e:
         cause = e.__cause__
         if cause is not None and _is_rag_region_allowlist_error(cause):
             _exit_rag_region_allowlist(args.region)
+        if cause is not None and _is_rag_engine_unprovisioned_error(cause):
+            _exit_rag_engine_unprovisioned(args.region)
         raise
 
     sink = args.import_result_sink.strip()

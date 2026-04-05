@@ -27,6 +27,9 @@ resource "google_vertex_ai_rag_engine_config" "main" {
     }
   }
 
-  depends_on = [google_project_service.required]
+  depends_on = [
+    google_project_service.required,
+    google_project_service_identity.vertex_ai,
+  ]
 }
 
