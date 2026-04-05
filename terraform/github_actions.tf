@@ -1,4 +1,4 @@
-# Optional: GitHub Actions deployer SA + WIF. Set TF_VAR_github_repository=owner/repo then apply.
+# GitHub Actions deployer SA + WIF. Default github_repository is ak47/digital_twin; set to "" to skip.
 # After apply, set repo secrets from outputs github_actions_wif_provider and github_actions_deployer_email.
 
 locals {
@@ -40,10 +40,12 @@ resource "google_service_account_iam_member" "github_deploy_act_as_runtime" {
   member             = "serviceAccount:${google_service_account.github_deploy[0].email}"
 }
 
+# Pool id was "${name_prefix}-github" originally; GCP still has that name if a past apply failed mid-flight.
+# Using "-gha-wif" avoids perpetual 409 "already exists" when the old pool is orphaned outside Terraform state.
 resource "google_iam_workload_identity_pool" "github" {
   count = local.github_wif_enabled ? 1 : 0
 
-  workload_identity_pool_id = "${var.name_prefix}-github"
+  workload_identity_pool_id = "${var.name_prefix}-gha-wif"
   display_name              = "GitHub Actions"
   project                   = var.project_id
 

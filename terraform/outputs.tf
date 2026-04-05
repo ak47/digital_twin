@@ -2,6 +2,11 @@ output "region" {
   value = var.region
 }
 
+output "project_id_for_github" {
+  description = "GitHub secret GCP_PROJECT_ID — copy after apply (same as TF_VAR_project_id)."
+  value       = nonsensitive(var.project_id)
+}
+
 output "corpus_bucket_name" {
   description = "Upload curated Markdown/PDF corpus here; RAG ingest jobs read from this bucket."
   value       = google_storage_bucket.corpus.name
@@ -37,11 +42,11 @@ output "cloud_run_uri" {
 }
 
 output "github_actions_wif_provider" {
-  description = "Repository secret GCP_WORKLOAD_IDENTITY_PROVIDER (full resource name). Null if github_repository is unset."
+  description = "Repository secret GCP_WORKLOAD_IDENTITY_PROVIDER (full resource name). Null if github_repository is empty (WIF disabled)."
   value       = one(google_iam_workload_identity_pool_provider.github[*].name)
 }
 
 output "github_actions_deployer_email" {
-  description = "Repository secret GCP_SERVICE_ACCOUNT_EMAIL. Null if github_repository is unset."
+  description = "Repository secret GCP_SERVICE_ACCOUNT_EMAIL. Null if github_repository is empty (WIF disabled)."
   value       = one(google_service_account.github_deploy[*].email)
 }

@@ -91,9 +91,10 @@ Dockerfile
 
 ## Deploy the API container
 
-**Commands, smoke tests, and GitHub Actions setup:** see **[`docs/WORKING.md`](docs/WORKING.md)**.
+**Infra + GitHub Actions secrets (short path):** **[`terraform/README.md`](terraform/README.md)** — then `./scripts/print-github-actions-secrets.sh`.  
+**Longer runbook / smoke tests:** [`docs/WORKING.md`](docs/WORKING.md) if present.
 
-Terraform may still reference a placeholder image until you push your image and run `terraform apply -var="container_image=..."` (or refresh after CI — see that doc).
+Terraform may still reference a placeholder image until you push your image and run `terraform apply -var="container_image=..."` (or refresh after CI).
 
 ## What’s next (product order)
 

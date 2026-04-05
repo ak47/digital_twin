@@ -1,5 +1,5 @@
 # Build, push to Artifact Registry, and update Cloud Run.
-# Configure GCP Workload Identity Federation + repo secrets (see docs/WORKING.md).
+# WIF + repo secrets: terraform/README.md and scripts/print-github-actions-secrets.sh
 
 name: Deploy API
 
@@ -50,7 +50,7 @@ jobs:
             echo "::error::Missing or empty repository secrets:${missing}"
             echo ""
             echo "Add them under: Settings → Secrets and variables → Actions → New repository secret"
-            echo "Names must match exactly (case-sensitive). See docs/WORKING.md."
+            echo "Names must match exactly (case-sensitive). See terraform/README.md."
             echo ""
             echo "If you added Values under Variables instead of Secrets, create Secrets with the same names — auth@v2 reads secrets.* only."
             echo "Fork PRs and some automation (e.g. Dependabot) do not receive secrets; push to main on this repo or use workflow_dispatch after secrets exist."

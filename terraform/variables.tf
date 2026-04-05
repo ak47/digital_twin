@@ -73,9 +73,9 @@ variable "rag_engine_tier" {
 }
 
 variable "github_repository" {
-  description = "GitHub repo allowed to deploy via OIDC (owner/name), e.g. ak47/digital_twin. Empty skips WIF + deployer SA (use manual secrets)."
+  description = "GitHub repo allowed to deploy via OIDC (owner/name). This project uses ak47/digital_twin. Set to \"\" to skip WIF + deployer SA (forks / JSON-key deploy only)."
   type        = string
-  default     = ""
+  default     = "ak47/digital_twin"
 
   validation {
     condition     = var.github_repository == "" || can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))

@@ -1,6 +1,10 @@
 # Copy to `terraform.tfvars` (gitignored) — do not commit.
 #
+# After apply: ../scripts/print-github-actions-secrets.sh → paste into GitHub Actions secrets.
+# Details: README.md in this directory.
+#
 # project_id = "your-gcp-project-id"
+# github_repository = "ak47/digital_twin"   # default in variables.tf; override only for forks / no WIF
 # region     = "us-central1"
 #
 # Optional overrides:
