@@ -31,7 +31,7 @@ An old pool id may exist in GCP but not in Terraform state. This stack now uses 
 
 ### RAG: upload `knowledge.txt` / `Profile.pdf` and ingest
 
-Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.region`** (default `us-central1`), optionally a **second** config in **`rag_corpus_ingest_region`** if you ingest in another GA RAG region, and grants the **Vertex AI Service Agent** (`service-…@gcp-sa-aiplatform.iam.gserviceaccount.com`) **`storage.objectViewer`** on the corpus bucket so Vertex can read `gs://` sources. You still **upload files** and **create a RAG corpus + import** (Vertex does not auto-read the bucket).
+Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.region`** (default `us-central1`), optionally a **second** config in **`rag_corpus_ingest_region`** if you ingest in another GA RAG region, provisions the **Vertex AI service identity** (`google_project_service_identity` for `aiplatform.googleapis.com`) so the managed service account exists, then grants that principal **`storage.objectViewer`** on the corpus bucket so Vertex can read `gs://` sources. You still **upload files** and **create a RAG corpus + import** (Vertex does not auto-read the bucket).
 
 1. **Bucket name** (after `terraform apply`):
 
