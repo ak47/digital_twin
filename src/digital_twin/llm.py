@@ -14,8 +14,15 @@ from digital_twin import rag_vertex
 
 logger = logging.getLogger(__name__)
 
+
+def gemini_model_id() -> str:
+    """Resolved Vertex model id (GEMINI_MODEL or default); used by chat and public metadata."""
+    raw = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    return raw or "gemini-2.5-flash"
+
+
 # Default tracks Vertex “latest stable” Flash; override with GEMINI_MODEL if needed.
-_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+_MODEL = gemini_model_id()
 
 # Filled on first use: env vars, else metadata (Cloud Run when CI omitted GCP_PROJECT_ID).
 _resolved_project_id: str | None = None
