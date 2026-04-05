@@ -84,10 +84,10 @@ jobs:
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
-          # Keep project/region in env so Vertex works even if the service was created without Terraform.
+          # Project/region for Vertex; CORS for browser preflight (escape commas inside values for gcloud).
           gcloud run services update "${SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${IMAGE}" \
-            --update-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION}" \
+            --update-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},CORS_ALLOWED_ORIGINS=https://no-ego.net\,https://www.no-ego.net" \
             --quiet

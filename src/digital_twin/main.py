@@ -30,9 +30,17 @@ logging.basicConfig(level=logging.INFO)
 
 SESSION_HEADER = "X-Session-Id"
 
+# When CORS_ALLOWED_ORIGINS is unset/empty, use the same defaults as Terraform (widget on no-ego).
+_DEFAULT_CORS_ORIGINS = (
+    "https://no-ego.net",
+    "https://www.no-ego.net",
+)
+
 
 def _cors_origins() -> list[str]:
-    raw = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+    raw = os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
+    if not raw:
+        return list(_DEFAULT_CORS_ORIGINS)
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
