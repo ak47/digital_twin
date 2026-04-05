@@ -15,6 +15,9 @@ Example:
 Default --region is us-central1. If Google blocks RAG there, stderr describes a backup path
 (Terraform rag_corpus_ingest_region + ingest --region); see terraform/README.md → RAG backup.
 
+Before create_corpus, the script calls UpdateRagEngineConfig (Basic or Scaled from TF_VAR_rag_engine_tier,
+default BASIC) if the regional RAG Engine is still unprovisioned — same API Google’s error text refers to.
+
 If rag.import_files fails with 500 after upload: terraform apply (RAG Engine + corpus bucket IAM);
 see terraform/README.md → RAG.
 """
@@ -87,6 +90,47 @@ def _upload(
         gs_uris.append(uri)
         print(f"Uploaded {p} -> {uri}")
     return gs_uris
+
+
+def _desired_rag_managed_db_tier():
+    """Match Terraform default `rag_engine_tier` (variables.tf): BASIC unless TF_VAR_rag_engine_tier=SCALED."""
+    from vertexai import rag
+
+    raw = (os.environ.get("TF_VAR_rag_engine_tier") or "BASIC").strip().upper()
+    if raw == "SCALED":
+        return rag.Scaled(), "Scaled"
+    return rag.Basic(), "Basic"
+
+
+def _ensure_vertex_rag_engine_ready(project_id: str, region: str) -> None:
+    """PATCH RagEngineConfig to Basic/Scaled when API still reports unprovisioned (common after create drift)."""
+    from vertexai import rag
+
+    name = f"projects/{project_id}/locations/{region}/ragEngineConfig"
+    tier_obj, tier_label = _desired_rag_managed_db_tier()
+
+    try:
+        cfg = rag.get_rag_engine_config(name=name)
+        t = cfg.rag_managed_db_config.tier if cfg.rag_managed_db_config else None
+        if isinstance(t, (rag.Basic, rag.Scaled)):
+            return
+    except ValueError:
+        # API shape not mapped by SDK (e.g. transitional states) — drive tier with PATCH.
+        pass
+    except gcp_exceptions.NotFound:
+        pass
+
+    print(
+        f"Vertex RAG Engine in {region!r} needs an active managed DB tier; "
+        f"UpdateRagEngineConfig → {tier_label} (waits for LRO)…",
+        file=sys.stderr,
+    )
+    rag.update_rag_engine_config(
+        rag_engine_config=rag.RagEngineConfig(
+            name=name,
+            rag_managed_db_config=rag.RagManagedDbConfig(tier=tier_obj),
+        ),
+    )
 
 
 def main() -> None:
@@ -170,6 +214,8 @@ def main() -> None:
 
     vertexai.init(project=args.project_id, location=args.region)
 
+    _ensure_vertex_rag_engine_ready(args.project_id, args.region)
+
     embedding_model_config = rag.RagEmbeddingModelConfig(
         vertex_prediction_endpoint=rag.VertexPredictionEndpoint(
             publisher_model="publishers/google/models/text-embedding-005"
@@ -201,41 +247,49 @@ def main() -> None:
         )
         raise SystemExit(1)
 
-    def _exit_rag_engine_unprovisioned(rag_region: str) -> None:
-        print(
-            f"Vertex reports RAG Engine is unprovisioned in {rag_region!r} (no active Basic/Scaled tier).\n"
-            "\n"
-            "Re-create the regional config from Terraform (pick the line that matches your --region):\n"
-            f'  cd terraform && terraform apply -replace=\'google_vertex_ai_rag_engine_config.main["{rag_region}"]\'\n'
-            "\n"
-            "If it still fails, confirm rag_engine_tier is BASIC or SCALED in tfvars, then apply again. "
-            "See terraform/README.md → RAG backup region (troubleshooting).\n",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-
-    try:
-        rag_corpus = rag.create_corpus(
-            display_name=args.display_name,
-            backend_config=rag.RagVectorDbConfig(
-                rag_embedding_model_config=embedding_model_config,
-            ),
-        )
-    except gcp_exceptions.InvalidArgument as e:
-        if _is_rag_region_allowlist_error(e):
-            _exit_rag_region_allowlist(args.region)
-        raise
-    except gcp_exceptions.FailedPrecondition as e:
-        if _is_rag_engine_unprovisioned_error(e):
-            _exit_rag_engine_unprovisioned(args.region)
-        raise
-    except RuntimeError as e:
-        cause = e.__cause__
-        if cause is not None and _is_rag_region_allowlist_error(cause):
-            _exit_rag_region_allowlist(args.region)
-        if cause is not None and _is_rag_engine_unprovisioned_error(cause):
-            _exit_rag_engine_unprovisioned(args.region)
-        raise
+    rag_corpus = None
+    for corpus_try in range(2):
+        try:
+            rag_corpus = rag.create_corpus(
+                display_name=args.display_name,
+                backend_config=rag.RagVectorDbConfig(
+                    rag_embedding_model_config=embedding_model_config,
+                ),
+            )
+            break
+        except gcp_exceptions.InvalidArgument as e:
+            if _is_rag_region_allowlist_error(e):
+                _exit_rag_region_allowlist(args.region)
+            raise
+        except gcp_exceptions.FailedPrecondition as e:
+            if _is_rag_engine_unprovisioned_error(e) and corpus_try == 0:
+                print(
+                    "create_corpus: still unprovisioned; re-applying tier and retrying once after 30s…",
+                    file=sys.stderr,
+                )
+                _ensure_vertex_rag_engine_ready(args.project_id, args.region)
+                time.sleep(30)
+                continue
+            raise
+        except RuntimeError as e:
+            cause = e.__cause__
+            if cause is not None and _is_rag_region_allowlist_error(cause):
+                _exit_rag_region_allowlist(args.region)
+            if (
+                cause is not None
+                and _is_rag_engine_unprovisioned_error(cause)
+                and corpus_try == 0
+            ):
+                print(
+                    "create_corpus: still unprovisioned; re-applying tier and retrying once after 30s…",
+                    file=sys.stderr,
+                )
+                _ensure_vertex_rag_engine_ready(args.project_id, args.region)
+                time.sleep(30)
+                continue
+            raise
+    if rag_corpus is None:
+        raise SystemExit("rag.create_corpus failed after retry.")
 
     sink = args.import_result_sink.strip()
     import_kw: dict = {}
