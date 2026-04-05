@@ -36,12 +36,27 @@ _DEFAULT_CORS_ORIGINS = (
     "https://www.no-ego.net",
 )
 
+# Always merged in so local Gatsby (`gatsby develop`, often :8000 / :8001) can call deployed API.
+_LOCAL_DEV_ORIGINS = (
+    "http://localhost:8000",
+    "http://localhost:8001",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:8001",
+)
+
 
 def _cors_origins() -> list[str]:
     raw = os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
     if not raw:
-        return list(_DEFAULT_CORS_ORIGINS)
-    return [o.strip() for o in raw.split(",") if o.strip()]
+        base = list(_DEFAULT_CORS_ORIGINS)
+    else:
+        base = [o.strip() for o in raw.split(",") if o.strip()]
+    seen = set(base)
+    for o in _LOCAL_DEV_ORIGINS:
+        if o not in seen:
+            base.append(o)
+            seen.add(o)
+    return base
 
 
 app = FastAPI(title="digital-twin-api", version="0.2.0")
