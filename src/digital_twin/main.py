@@ -111,21 +111,28 @@ def root() -> dict[str, str]:
     }
 
 
+def _resolve_session_id_or_400(x_session_id: str | None) -> str:
+    validated = session_store.validate_session_id(x_session_id)
+    if x_session_id and x_session_id.strip() and not validated:
+        raise HTTPException(status_code=400, detail="Invalid X-Session-Id (expected UUID).")
+    return validated or session_store.new_session_id()
+
+
+def _json_with_session_id(*, sid: str, body: dict[str, object]) -> JSONResponse:
+    resp = JSONResponse(content=body)
+    resp.headers[SESSION_HEADER] = sid
+    return resp
+
+
 @app.get("/api/chat")
 def chat_history(
     request: Request,
     x_session_id: str | None = Header(default=None, alias=SESSION_HEADER),
 ) -> JSONResponse:
-    validated = session_store.validate_session_id(x_session_id)
-    if x_session_id and x_session_id.strip() and not validated:
-        raise HTTPException(status_code=400, detail="Invalid X-Session-Id (expected UUID).")
-
-    sid = validated or session_store.new_session_id()
+    sid = _resolve_session_id_or_400(x_session_id)
     messages = session_store.load_messages(sid)
     body = {"messages": messages}
-    resp = JSONResponse(content=body)
-    resp.headers[SESSION_HEADER] = sid
-    return resp
+    return _json_with_session_id(sid=sid, body=body)
 
 
 @app.post("/api/chat")
@@ -140,11 +147,7 @@ async def chat_post(
         )
     )
 
-    validated = session_store.validate_session_id(x_session_id)
-    if x_session_id and x_session_id.strip() and not validated:
-        raise HTTPException(status_code=400, detail="Invalid X-Session-Id (expected UUID).")
-
-    sid = validated or session_store.new_session_id()
+    sid = _resolve_session_id_or_400(x_session_id)
 
     try:
         payload = await request.json()
