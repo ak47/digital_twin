@@ -15,20 +15,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-logger = logging.getLogger(__name__)
+from digital_twin.settings import get_settings
+from digital_twin.time_utils import utc_now, utc_now_iso
 
-_tz_name = (
-    os.environ.get("RESUME_BOT_DIGEST_TIMEZONE", "America/Los_Angeles").strip()
-    or "America/Los_Angeles"
-)
-try:
-    _DIGEST_DISPLAY_TZ = ZoneInfo(_tz_name)
-except Exception:
-    _DIGEST_DISPLAY_TZ = ZoneInfo("America/Los_Angeles")
-    logger.warning(
-        "Invalid RESUME_BOT_DIGEST_TIMEZONE=%r; using America/Los_Angeles",
-        _tz_name,
-    )
+logger = logging.getLogger(__name__)
 
 _SESSION_JSON = re.compile(
     r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.json$", re.I
@@ -51,28 +41,41 @@ def _parse_iso(s: str | None) -> datetime | None:
 
 
 def _utc_now() -> datetime:
-    return datetime.now(UTC)
+    return utc_now()
 
 
 def _utc_now_iso() -> str:
-    return _utc_now().isoformat().replace("+00:00", "Z")
+    return utc_now_iso()
+
+
+def _digest_display_tz() -> ZoneInfo:
+    tz_name = get_settings().resume_bot_digest_timezone
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        logger.warning(
+            "Invalid RESUME_BOT_DIGEST_TIMEZONE=%r; using America/Los_Angeles",
+            tz_name,
+        )
+        return ZoneInfo("America/Los_Angeles")
 
 
 def _format_digest_timestamp(utc_dt: datetime) -> str:
     """Wall time for email subject / attachment (default US Pacific)."""
     if utc_dt.tzinfo is None:
         utc_dt = utc_dt.replace(tzinfo=UTC)
-    return utc_dt.astimezone(_DIGEST_DISPLAY_TZ).strftime("%Y-%m-%d %H:%M %Z")
+    return utc_dt.astimezone(_digest_display_tz()).strftime("%Y-%m-%d %H:%M %Z")
 
 
 _GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 
 
 def _gmail_service_account_json() -> str:
-    raw = os.environ.get("GMAIL_SERVICE_ACCOUNT_JSON", "").strip()
+    s = get_settings()
+    raw = s.gmail_service_account_json.strip()
     if raw:
         return raw
-    path = os.environ.get("GMAIL_SERVICE_ACCOUNT_KEY_FILE", "").strip()
+    path = s.gmail_service_account_key_file.strip()
     if path and os.path.isfile(path):
         try:
             with open(path, encoding="utf-8") as f:
@@ -83,8 +86,9 @@ def _gmail_service_account_json() -> str:
 
 
 def _gmail_configured() -> bool:
+    s = get_settings()
     return bool(
-        os.environ.get("GMAIL_DELEGATED_USER", "").strip()
+        s.gmail_delegated_user.strip()
         and _gmail_service_account_json()
     )
 
@@ -97,24 +101,21 @@ def digest_email_provider() -> str:
 
 
 def digest_feature_configured() -> bool:
+    s = get_settings()
     return bool(
-        os.environ.get("GCS_SESSIONS_BUCKET", "").strip()
-        and os.environ.get("RESUME_BOT_DIGEST_EMAIL_TO", "").strip()
+        s.gcs_sessions_bucket.strip()
+        and s.resume_bot_digest_email_to.strip()
         and digest_email_provider() != ""
     )
 
 
 def _digest_recipients() -> list[str]:
-    raw = os.environ.get("RESUME_BOT_DIGEST_EMAIL_TO", "").strip()
+    raw = get_settings().resume_bot_digest_email_to.strip()
     return [e.strip() for e in raw.split(",") if e.strip()]
 
 
 def _idle_delta() -> timedelta:
-    try:
-        minutes = int(os.environ.get("RESUME_BOT_DIGEST_IDLE_MINUTES", "60").strip())
-    except ValueError:
-        minutes = 60
-    return timedelta(minutes=max(1, minutes))
+    return timedelta(minutes=get_settings().resume_bot_digest_idle_minutes)
 
 
 def transcript_attachment_text(
@@ -166,7 +167,9 @@ def _send_gmail_digest(
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
 
-    delegated = os.environ["GMAIL_DELEGATED_USER"].strip()
+    delegated = get_settings().gmail_delegated_user.strip()
+    if not delegated:
+        raise RuntimeError("Gmail digest: missing delegated user")
     sa_json = _gmail_service_account_json()
     if not sa_json:
         raise RuntimeError("Gmail digest: missing service account JSON")
@@ -237,8 +240,9 @@ def scan_and_send_idle_digests() -> None:
     if not digest_feature_configured():
         return
 
-    bucket_name = os.environ.get("GCS_SESSIONS_BUCKET", "").strip()
-    prefix = os.environ.get("GCS_SESSIONS_PREFIX", "sessions").strip().strip("/")
+    s = get_settings()
+    bucket_name = s.gcs_sessions_bucket.strip()
+    prefix = s.gcs_sessions_prefix.strip().strip("/")
     to_emails = _digest_recipients()
     if not to_emails:
         return
@@ -308,7 +312,7 @@ def scan_and_send_idle_digests() -> None:
         attachment = transcript_attachment_text(sid, messages, exported_at_utc=send_moment)
         subj_time = _format_digest_timestamp(send_moment)
         subject = f"resume bot chat {subj_time}"
-        local = send_moment.astimezone(_DIGEST_DISPLAY_TZ)
+        local = send_moment.astimezone(_digest_display_tz())
         filename = f"resume-bot-chat-{sid[:8]}-{local:%Y%m%d-%H%M}.txt"
 
         try:

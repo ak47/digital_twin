@@ -32,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from digital_twin import llm, rate_limit, session_store
+from digital_twin.settings import get_settings
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -54,7 +55,7 @@ _LOCAL_DEV_ORIGINS = (
 
 
 def _cors_origins() -> list[str]:
-    raw = os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
+    raw = get_settings().cors_allowed_origins
     if not raw:
         base = list(_DEFAULT_CORS_ORIGINS)
     else:

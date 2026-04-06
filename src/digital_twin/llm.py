@@ -11,18 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from digital_twin import rag_vertex
+from digital_twin.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 def gemini_model_id() -> str:
     """Resolved Vertex model id (GEMINI_MODEL or default); used by chat and public metadata."""
-    raw = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
-    return raw or "gemini-2.5-flash"
-
-
-# Default tracks Vertex “latest stable” Flash; override with GEMINI_MODEL if needed.
-_MODEL = gemini_model_id()
+    return get_settings().gemini_model
 
 # Filled on first use: env vars, else metadata (Cloud Run when CI omitted GCP_PROJECT_ID).
 _resolved_project_id: str | None = None
@@ -84,8 +80,9 @@ def stream_reply(
     Yield text fragments. Uses Vertex when project id is known (env or Cloud Run metadata)
     and google-genai works; otherwise yields a single fallback string.
     """
+    s = get_settings()
     project = _resolve_gcp_project()
-    region = os.environ.get("GCP_REGION", "us-central1").strip()
+    region = s.gcp_region
     system = _load_system_instruction()
 
     if not project:
@@ -95,7 +92,7 @@ def stream_reply(
         )
         return
 
-    corpus = os.environ.get("RAG_CORPUS_RESOURCE", "").strip()
+    corpus = s.rag_corpus_resource
     if corpus:
         rag_block = rag_vertex.fetch_rag_context(project, region, corpus, user_text)
         if rag_block:
@@ -132,11 +129,11 @@ def stream_reply(
 
     try:
         stream = client.models.generate_content_stream(
-            model=_MODEL,
+            model=s.gemini_model,
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system,
-                max_output_tokens=int(os.environ.get("MAX_OUTPUT_TOKENS", "2048")),
+                max_output_tokens=s.max_output_tokens,
             ),
         )
         for chunk in stream:
