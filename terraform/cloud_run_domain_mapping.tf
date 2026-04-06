@@ -17,6 +17,12 @@ resource "google_cloud_run_domain_mapping" "api" {
     route_name = google_cloud_run_v2_service.api.name
   }
 
+  # Imported or console-created mappings often omit certificate_mode in state while the provider
+  # defaults it to AUTOMATIC (ForceNew). Ignoring spec avoids a no-op replace that would fail with 409.
+  lifecycle {
+    ignore_changes = [spec]
+  }
+
   depends_on = [
     google_cloud_run_v2_service.api,
   ]

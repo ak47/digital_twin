@@ -5,6 +5,14 @@ resource "google_cloud_run_v2_service" "api" {
   deletion_protection  = false
   ingress              = "INGRESS_TRAFFIC_ALL"
 
+  # CD owns the container image (GitHub Actions deploy-api workflow).
+  # Prevent `terraform apply` from reverting to the bootstrap/default image.
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image,
+    ]
+  }
+
   template {
     service_account = google_service_account.cloud_run_api.email
 
