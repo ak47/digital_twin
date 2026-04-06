@@ -24,6 +24,7 @@ class Settings:
     rag_corpus_resource: str
 
     gemini_model: str
+    gemini_location: str
     max_output_tokens: int
 
     resume_bot_digest_email_to: str
@@ -66,6 +67,9 @@ def get_settings() -> Settings:
         gcp_region=_env("GCP_REGION", "us-central1") or "us-central1",
         rag_corpus_resource=_env("RAG_CORPUS_RESOURCE", ""),
         gemini_model=_env("GEMINI_MODEL", "gemini-2.5-flash") or "gemini-2.5-flash",
+        # Vertex publisher models are not always available in every region. Many preview models are
+        # served from the global location even when your app runs regionally.
+        gemini_location=_env("GEMINI_LOCATION", ""),
         max_output_tokens=max_tokens,
         resume_bot_digest_email_to=_env("RESUME_BOT_DIGEST_EMAIL_TO", ""),
         resume_bot_digest_idle_minutes=idle,

@@ -102,6 +102,9 @@ jobs:
           RAG_CORPUS_RESOURCE: ${{ vars.RAG_CORPUS_RESOURCE }}
           # Optional override; default matches terraform/variables.tf (comma in value → use ^;^ below).
           CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+          # Optional: override Gemini model/location without Terraform apply.
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GEMINI_LOCATION: ${{ vars.GEMINI_LOCATION }}
         run: |
           set -eu
           # Default gcloud --update-env-vars splits on commas between KEY=value pairs, so
@@ -111,6 +114,12 @@ jobs:
           EXTRA=""
           if [ -n "${RAG_CORPUS_RESOURCE}" ]; then
             EXTRA=";RAG_CORPUS_RESOURCE=${RAG_CORPUS_RESOURCE}"
+          fi
+          if [ -n "${GEMINI_MODEL:-}" ]; then
+            EXTRA="${EXTRA};GEMINI_MODEL=${GEMINI_MODEL}"
+          fi
+          if [ -n "${GEMINI_LOCATION:-}" ]; then
+            EXTRA="${EXTRA};GEMINI_LOCATION=${GEMINI_LOCATION}"
           fi
           gcloud run services update "${SERVICE}" \
             --project="${PROJECT_ID}" \

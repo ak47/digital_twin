@@ -82,7 +82,12 @@ def stream_reply(
     """
     s = get_settings()
     project = _resolve_gcp_project()
-    region = s.gcp_region
+    # Preview publisher models are frequently only served from the global location on Vertex.
+    # If GEMINI_LOCATION is set, respect it. Otherwise default previews to global.
+    location = (
+        s.gemini_location
+        or ("global" if "-preview" in s.gemini_model else s.gcp_region)
+    )
     system = _load_system_instruction()
 
     if not project:
@@ -94,7 +99,9 @@ def stream_reply(
 
     corpus = s.rag_corpus_resource
     if corpus:
-        rag_block = rag_vertex.fetch_rag_context(project, region, corpus, user_text)
+        rag_block = rag_vertex.fetch_rag_context(
+            project, s.gcp_region, corpus, user_text
+        )
         if rag_block:
             system = f"{system}\n\n---\n\n{rag_block}"
 
@@ -107,7 +114,7 @@ def stream_reply(
         return
 
     try:
-        client = genai.Client(vertexai=True, project=project, location=region)
+        client = genai.Client(vertexai=True, project=project, location=location)
     except Exception as e:
         logger.warning("Genai client init failed: %s", e)
         yield f"(Model unavailable: {e!s})"
