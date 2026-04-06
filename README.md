@@ -1,5 +1,7 @@
 # digital_twin
 
+[![CI](https://github.com/ak47/digital_twin/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ak47/digital_twin/actions/workflows/ci.yml)
+
 Private GCP backend for the **no-ego** “career chat” widget (Vertex AI RAG + Gemini Flash, Cloud Run, GCS sessions).  
 Public UI lives in **ak47.github.io**; this repo holds **Terraform**, application code, corpus, and prompts.
 
