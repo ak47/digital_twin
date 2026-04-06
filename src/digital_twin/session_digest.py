@@ -40,14 +40,6 @@ def _parse_iso(s: str | None) -> datetime | None:
     return dt
 
 
-def _utc_now() -> datetime:
-    return utc_now()
-
-
-def _utc_now_iso() -> str:
-    return utc_now_iso()
-
-
 def _digest_display_tz() -> ZoneInfo:
     tz_name = get_settings().resume_bot_digest_timezone
     try:
@@ -124,7 +116,7 @@ def transcript_attachment_text(
     *,
     exported_at_utc: datetime | None = None,
 ) -> str:
-    when = exported_at_utc if exported_at_utc is not None else _utc_now()
+    when = exported_at_utc if exported_at_utc is not None else utc_now()
     lines = [
         f"Session: {session_id}",
         f"Exported: {_format_digest_timestamp(when)}",
@@ -254,7 +246,7 @@ def scan_and_send_idle_digests() -> None:
         return
 
     idle = _idle_delta()
-    now = _utc_now()
+    now = utc_now()
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     prefix_slash = f"{prefix}/"
@@ -308,7 +300,7 @@ def scan_and_send_idle_digests() -> None:
         ):
             continue
 
-        send_moment = _utc_now()
+        send_moment = utc_now()
         attachment = transcript_attachment_text(sid, messages, exported_at_utc=send_moment)
         subj_time = _format_digest_timestamp(send_moment)
         subject = f"resume bot chat {subj_time}"
@@ -326,7 +318,7 @@ def scan_and_send_idle_digests() -> None:
             logger.exception("digest: email failed for session %s: %s", sid, e)
             continue
 
-        raw["idle_digest_sent_at"] = _utc_now_iso()
+        raw["idle_digest_sent_at"] = utc_now_iso()
         raw.setdefault("messages", messages)
         raw.setdefault("last_activity_at", last_activity.isoformat().replace("+00:00", "Z"))
 
