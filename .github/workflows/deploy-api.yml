@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   # REPO must match terraform artifact_registry_repository_id (default digital-twin; underscores invalid in GCP).
   REGION: us-central1
   REPO: digital-twin
