@@ -4,20 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import uuid
-from datetime import UTC, datetime
 from typing import Any
+
+from digital_twin.settings import get_settings
+from digital_twin.time_utils import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-_BUCKET = os.environ.get("GCS_SESSIONS_BUCKET", "").strip()
-_PREFIX = os.environ.get("GCS_SESSIONS_PREFIX", "sessions").strip().strip("/")
 _memory: dict[str, list[dict[str, Any]]] = {}
 
 _SESSION_ID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$", re.I)
@@ -38,18 +33,20 @@ def validate_session_id(sid: str | None) -> str | None:
 
 
 def _blob_path(session_id: str) -> str:
-    return f"{_PREFIX}/{session_id}.json"
+    prefix = get_settings().gcs_sessions_prefix.strip().strip("/")
+    return f"{prefix}/{session_id}.json"
 
 
 def load_messages(session_id: str) -> list[dict[str, Any]]:
-    if not _BUCKET:
+    bucket_name = get_settings().gcs_sessions_bucket
+    if not bucket_name:
         return [dict(m) for m in _memory.get(session_id, [])]
 
     try:
         from google.cloud import storage
 
         client = storage.Client()
-        blob = client.bucket(_BUCKET).blob(_blob_path(session_id))
+        blob = client.bucket(bucket_name).blob(_blob_path(session_id))
         if not blob.exists():
             return []
         data = json.loads(blob.download_as_text(encoding="utf-8"))
@@ -63,7 +60,8 @@ def load_messages(session_id: str) -> list[dict[str, Any]]:
 
 
 def save_messages(session_id: str, messages: list[dict[str, Any]]) -> None:
-    if not _BUCKET:
+    bucket_name = get_settings().gcs_sessions_bucket
+    if not bucket_name:
         _memory[session_id] = [dict(m) for m in messages]
         return
 
@@ -71,7 +69,7 @@ def save_messages(session_id: str, messages: list[dict[str, Any]]) -> None:
         from google.cloud import storage
 
         client = storage.Client()
-        blob = client.bucket(_BUCKET).blob(_blob_path(session_id))
+        blob = client.bucket(bucket_name).blob(_blob_path(session_id))
         doc: dict[str, Any] = {}
         if blob.exists():
             try:
@@ -82,7 +80,7 @@ def save_messages(session_id: str, messages: list[dict[str, Any]]) -> None:
                 doc = {}
 
         doc["messages"] = [dict(m) for m in messages]
-        doc["last_activity_at"] = _utc_now_iso()
+        doc["last_activity_at"] = utc_now_iso()
         sent = doc.get("idle_digest_sent_at")
         if sent is not None and not isinstance(sent, str):
             doc["idle_digest_sent_at"] = None
