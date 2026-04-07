@@ -1,9 +1,9 @@
 resource "google_cloud_run_v2_service" "api" {
-  name                 = "${var.name_prefix}-api"
-  location             = var.region
-  project              = var.project_id
-  deletion_protection  = false
-  ingress              = "INGRESS_TRAFFIC_ALL"
+  name                = "${var.name_prefix}-api"
+  location            = var.region
+  project             = var.project_id
+  deletion_protection = false
+  ingress             = "INGRESS_TRAFFIC_ALL"
 
   # CD owns the container image (GitHub Actions deploy-api workflow).
   # Prevent `terraform apply` from reverting to the bootstrap/default image.
