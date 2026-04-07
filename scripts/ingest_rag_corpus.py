@@ -245,7 +245,12 @@ def main() -> None:
 
     vertexai.init(project=args.project_id, location=vertex_location)
 
-    _ensure_vertex_rag_engine_ready(args.project_id, vertex_location)
+    # Re-ingest (--corpus-resource-name): skip get/update RagEngineConfig. GitHub Actions SAs often
+    # have permission to import_files but not aiplatform.ragEngineConfigs.get; the engine must
+    # already be provisioned for an existing corpus. First-time create_corpus still runs ensure below
+    # (and retries call it on unprovisioned errors).
+    if not corpus_existing:
+        _ensure_vertex_rag_engine_ready(args.project_id, vertex_location)
 
     embedding_model_config = rag.RagEmbeddingModelConfig(
         vertex_prediction_endpoint=rag.VertexPredictionEndpoint(

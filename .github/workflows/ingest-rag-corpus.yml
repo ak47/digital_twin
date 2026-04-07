@@ -2,8 +2,10 @@
 # Upload changed files to the corpus bucket first (e.g. gsutil cp … gs://BUCKET/rag-sources/).
 #
 # Repository Variables: CORPUS_BUCKET_NAME, RAG_CORPUS_RESOURCE (required).
-# Optional: RAG_INGEST_REGION (default europe-west4 if not inferable from corpus name).
+# Optional: RAG_INGEST_REGION (fallback when corpus name has no /locations/REGION/; else inferred).
 # Secrets: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID (same as Deploy API).
+# The ingest script skips RagEngineConfig GET for existing corpora so the SA need not have
+# aiplatform.ragEngineConfigs.get (import_files still needs Vertex AI / RAG corpus access).
 
 name: Ingest RAG corpus
 
