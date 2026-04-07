@@ -31,6 +31,15 @@ resource "google_project_iam_member" "github_deploy_run_admin" {
   member  = "serviceAccount:${google_service_account.github_deploy[0].email}"
 }
 
+# Ingest RAG corpus workflow calls rag.import_files (aiplatform.ragFiles.import); same role as runtime API.
+resource "google_project_iam_member" "github_deploy_vertex_user" {
+  count = local.github_wif_enabled ? 1 : 0
+
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.github_deploy[0].email}"
+}
+
 # Allow gcloud run services update to keep using the runtime service account on the revision.
 resource "google_service_account_iam_member" "github_deploy_act_as_runtime" {
   count = local.github_wif_enabled ? 1 : 0

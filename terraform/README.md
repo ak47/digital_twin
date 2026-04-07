@@ -144,7 +144,7 @@ Google may block **RAG Engine** in `us-central1` for new projects until allowlis
 
 **Re-import into the same corpus** (after upload to `rag-sources/`): with **`--skip-upload`**, the script imports the **whole** `gs://<bucket>/rag-sources/` prefix; pass any **`--files`** value to satisfy the CLI (the workflow uses a placeholder). Example:  
 `python3 scripts/ingest_rag_corpus.py --project-id … --corpus-resource-name 'projects/…/ragCorpora/…' --skip-upload --files .`  
-Or use GitHub Actions **Ingest RAG corpus** (Variables **`CORPUS_BUCKET_NAME`**, **`RAG_CORPUS_RESOURCE`**; see **`.github/workflows/ingest-rag-corpus.yml`**). No change to **`RAG_CORPUS_RESOURCE`** on Cloud Run.
+Or use GitHub Actions **Ingest RAG corpus** (Variables **`CORPUS_BUCKET_NAME`**, **`RAG_CORPUS_RESOURCE`**; see **`.github/workflows/ingest-rag-corpus.yml`**). The workflow identity must be able to call **`ragFiles.import`**; Terraform grants **`roles/aiplatform.user`** to the GitHub deploy service account (**`google_project_iam_member.github_deploy_vertex_user`**). Apply that change if ingest fails with **`aiplatform.ragFiles.import` denied**. No change to **`RAG_CORPUS_RESOURCE`** on Cloud Run.
 
 3. **Wire Cloud Run** with the printed resource name:
 

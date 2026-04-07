@@ -5,7 +5,8 @@
 # Optional: RAG_INGEST_REGION (fallback when corpus name has no /locations/REGION/; else inferred).
 # Secrets: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID (same as Deploy API).
 # The ingest script skips RagEngineConfig GET for existing corpora so the SA need not have
-# aiplatform.ragEngineConfigs.get (import_files still needs Vertex AI / RAG corpus access).
+# aiplatform.ragEngineConfigs.get. rag.import_files requires aiplatform.ragFiles.import;
+# Terraform grants roles/aiplatform.user to the GitHub deploy SA (github_actions.tf).
 
 name: Ingest RAG corpus
 
