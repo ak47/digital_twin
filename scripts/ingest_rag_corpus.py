@@ -21,8 +21,8 @@ default BASIC) if the regional RAG Engine is still unprovisioned — same API Go
 If rag.import_files fails with 500 after upload: terraform apply (RAG Engine + corpus bucket IAM);
 see terraform/README.md → RAG.
 
-Any failed_rag_files_count from Vertex always exits 1. Use --strict-import (GitHub Actions does) to
-also exit 1 when imported_rag_files_count is 0 so CI does not go green on an all-skipped import.
+Any failed_rag_files_count from Vertex always exits 1. An all-skipped import (imported=0, skipped>0)
+is success: the corpus already had those URIs; the script prints a short conclusion line.
 """
 from __future__ import annotations
 
@@ -204,15 +204,6 @@ def main() -> None:
             "when possible; otherwise use --region."
         ),
     )
-    parser.add_argument(
-        "--strict-import",
-        action="store_true",
-        help=(
-            "Exit with status 1 if Vertex reports imported_rag_files_count==0 after import. "
-            "Use in CI when a green run must mean at least one GCS object was newly ingested "
-            "(skips alone do not count). Omit for idempotent local re-import when unchanged URIs are OK."
-        ),
-    )
     args = parser.parse_args()
 
     if not args.project_id.strip():
@@ -352,6 +343,7 @@ def main() -> None:
     if sink:
         import_kw["import_result_sink"] = sink
 
+    imp = skp = fail = 0
     for attempt in range(max(1, args.import_retries)):
         if attempt:
             delay = min(60, 5 * (2 ** (attempt - 1)))
@@ -386,22 +378,6 @@ def main() -> None:
                     file=sys.stderr,
                 )
                 raise SystemExit(1)
-            if imp == 0 and skp > 0:
-                print(
-                    "::warning::0 new files imported; Vertex skipped existing URIs. "
-                    "In-place GCS overwrites often do NOT refresh embeddings — rename objects, "
-                    "remove RagFiles in the console, or use a new corpus. "
-                    "Also confirm Cloud Run RAG_CORPUS_RESOURCE exactly matches this corpus.",
-                    file=sys.stderr,
-                )
-            if args.strict_import and imp == 0:
-                print(
-                    "::error::Strict import: imported_rag_files_count is 0 — nothing new was indexed. "
-                    "Upload or rename objects under the import prefix, remove stale RagFiles, or omit "
-                    "--strict-import for an idempotent no-op re-import.",
-                    file=sys.stderr,
-                )
-                raise SystemExit(1)
             break
         except gcp_exceptions.PermissionDenied as e:
             msg = str(e).lower()
@@ -430,7 +406,24 @@ def main() -> None:
                 raise
 
     resource = rag_corpus.name
-    print("")
+    print("", file=sys.stderr)
+    if imp > 0:
+        conclusion = (
+            f"Conclusion: success — {imp} new file(s) indexed, {skp} skipped (already in corpus)."
+        )
+    elif skp > 0:
+        conclusion = (
+            "Conclusion: success — no new URIs; corpus already contained those objects (idempotent). "
+            "If you only overwrote blobs in place, embeddings may still be stale — rename objects or "
+            "remove RagFiles in Vertex, then re-import."
+        )
+    else:
+        conclusion = (
+            "Conclusion: import call finished with no imported or skipped files — "
+            "check that the GCS prefix has objects and matches this corpus."
+        )
+    print(conclusion, file=sys.stderr)
+    print("", file=sys.stderr)
     print("RAG import finished.")
     if corpus_existing:
         print(f"Corpus unchanged: {resource!r} (re-ingest only; no TF_VAR / env update needed).")
