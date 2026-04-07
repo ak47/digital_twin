@@ -57,7 +57,7 @@ Use the same bucket Terraform outputs as **`corpus_bucket_name`**.
 2. **Terraform:** set **`gha_terraform_state_bucket`** in `terraform.tfvars` to the **same GCS bucket** as `terraform/backend.tf` (remote state), then **`terraform apply`**. That grants the GitHub deploy service account **`storage.objectViewer`** on the state bucket so CI can run **`terraform init`** and read **`corpus_bucket_name`** + **`rag_corpus_resource_name`** from state — **no** duplicate repository Variables `CORPUS_BUCKET_NAME` / `RAG_CORPUS_RESOURCE`.
 3. Run workflow **[Ingest RAG corpus](https://github.com/ak47/digital_twin/actions)** (**workflow_dispatch**).
 
-The workflow runs `terraform init` / `terraform output`, then `ingest_rag_corpus.py` with **`--skip-upload`** and **`--strict-import`**. The job **fails** if Vertex reports any **failed** imports or if **`imported_rag_files_count` is 0** (so an all-skipped run does not show green). With **`--skip-upload`**, the script imports the **entire prefix** `gs://<bucket>/rag-sources/`; the **`--files`** argument in the workflow exists only to satisfy the CLI parser and does **not** limit which bucket objects are imported.
+The workflow runs `terraform init` / `terraform output`, then `ingest_rag_corpus.py` with **`--skip-upload`**. The job **fails** if Vertex reports any **failed** imports or the script exits on API/permission errors. An all-skipped import (**`imported=0`**, **`skipped>0`**) is **success** (idempotent re-import). With **`--skip-upload`**, the script imports the **entire prefix** `gs://<bucket>/rag-sources/`; the **`--files`** argument in the workflow exists only to satisfy the CLI parser and does **not** limit which bucket objects are imported.
 
 **Option B — Local**
 

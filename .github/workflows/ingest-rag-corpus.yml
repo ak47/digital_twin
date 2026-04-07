@@ -11,7 +11,7 @@
 # The ingest script skips RagEngineConfig GET for existing corpora so the SA need not have
 # aiplatform.ragEngineConfigs.get. rag.import_files requires aiplatform.ragFiles.import plus corpus
 # bucket read; Terraform grants roles/aiplatform.user and storage.objectViewer on the corpus bucket.
-# The workflow passes --strict-import: the job fails if Vertex reports import failures or imported=0.
+# The job fails only if Vertex reports failed imports or the script hits permission/API errors.
 
 name: Ingest RAG corpus
 
@@ -155,5 +155,4 @@ jobs:
             --bucket "${BUCKET}" \
             --corpus-resource-name "${CORPUS}" \
             --skip-upload \
-            --strict-import \
             --files README.md
