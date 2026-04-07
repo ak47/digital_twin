@@ -63,6 +63,10 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "GEMINI_MODEL"
         value = var.gemini_model
       }
+      env {
+        name  = "MAX_OUTPUT_TOKENS"
+        value = tostring(var.max_output_tokens)
+      }
 
       dynamic "env" {
         for_each = var.rag_corpus_resource_name != "" ? [1] : []

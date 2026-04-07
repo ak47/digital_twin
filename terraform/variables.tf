@@ -34,6 +34,12 @@ variable "gemini_model" {
   default     = "gemini-2.5-flash"
 }
 
+variable "max_output_tokens" {
+  description = "Hard cap for model output length (MAX_OUTPUT_TOKENS). Lower values reduce verbosity."
+  type        = number
+  default     = 1024
+}
+
 variable "rag_corpus_resource_name" {
   description = "Full Vertex RAG corpus resource name for retrieval (empty disables RAG in the app). Example: projects/ID/locations/us-central1/ragCorpora/UUID"
   type        = string
