@@ -6,7 +6,7 @@ terraform.tfvars
 terraform.tfvars.json
 *.auto.tfvars
 !terraform.tfvars.example
-terraform/backend.tf
+# Optional: partial backend overrides (bucket stays in committed backend.tf for CI).
 terraform/backend.hcl
 rag-sources/
 

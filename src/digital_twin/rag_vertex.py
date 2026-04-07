@@ -11,6 +11,13 @@ logger = logging.getLogger(__name__)
 _vertex_init_key: tuple[str, str, str] | None = None
 
 _CORPUS_LOC = re.compile(r"^projects/[^/]+/locations/([^/]+)/ragCorpora/")
+_CORPUS_PROJECT = re.compile(r"^projects/([^/]+)/")
+
+
+def _corpus_project_id(corpus_resource_name: str) -> str | None:
+    """Project id or number embedded in the corpus resource name (authoritative for retrieval)."""
+    m = _CORPUS_PROJECT.match(corpus_resource_name.strip())
+    return m.group(1) if m else None
 
 
 def _vertex_location_for_corpus(corpus_resource_name: str, fallback_region: str) -> str:
@@ -43,10 +50,22 @@ def fetch_rag_context(
         return ""
 
     global _vertex_init_key
+    # Retrieval must use the corpus resource's project; GCP_PROJECT_ID on Cloud Run can drift
+    # (wrong secret, different deploy) while RAG_CORPUS_RESOURCE still points at another project.
+    corpus_project = (_corpus_project_id(corpus_resource_name) or project or "").strip()
+    if not corpus_project:
+        logger.warning("RAG corpus resource missing projects/ segment; retrieval skipped")
+        return ""
+    if project.strip() and corpus_project != project.strip():
+        logger.info(
+            "RAG corpus project %s differs from app GCP_PROJECT_ID %s; using corpus project for Vertex",
+            corpus_project,
+            project.strip(),
+        )
     vloc = _vertex_location_for_corpus(corpus_resource_name, region)
-    key = (project, vloc, corpus_resource_name)
+    key = (corpus_project, vloc, corpus_resource_name)
     if _vertex_init_key != key:
-        vertexai.init(project=project, location=vloc)
+        vertexai.init(project=corpus_project, location=vloc)
         _vertex_init_key = key
 
     top_k = int(os.environ.get("RAG_TOP_K", "8"))

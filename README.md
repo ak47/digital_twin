@@ -40,10 +40,10 @@ Run the API locally with variables from [`.env.example`](.env.example). Terrafor
 ## Deploy API to Cloud Run
 
 1. Apply Terraform in `terraform/` (creates buckets, RAG engine config, Artifact Registry, Cloud Run service, WIF for GitHub, etc.).
-2. Add the three GitHub Actions **secrets** printed by `./scripts/print-github-actions-secrets.sh`.
+2. Add the GitHub Actions **secrets** from `./scripts/print-github-actions-secrets.sh` (GCP WIF trio + **`TERRAFORM_TFVARS`** if you use [`.github/workflows/terraform.yml`](.github/workflows/terraform.yml)).
 3. Push to `main` (or run **Deploy API** manually); [.github/workflows/deploy-api.yml](.github/workflows/deploy-api.yml) builds `linux/amd64`, pushes the image, and updates the service.
 
-Optional repository **Variables** (for example `RAG_CORPUS_RESOURCE`, `CORS_ALLOWED_ORIGINS`) are described in `terraform/README.md` and [docs/architecture.md](docs/architecture.md).
+Optional repository **Variables** (for example **`CORS_ALLOWED_ORIGINS`**; **`RAG_CORPUS_RESOURCE`** only if overriding Terraform on deploy) are described in `terraform/README.md` and [docs/architecture.md](docs/architecture.md). **Ingest RAG corpus** reads **`corpus_bucket_name`** and **`rag_corpus_resource_name`** from remote Terraform state — no separate `CORPUS_BUCKET_NAME` / `RAG_CORPUS_RESOURCE` variables for that workflow.
 
 **Region:** Default compute / primary Terraform region is **`us-central1`** ([terraform/variables.tf](terraform/variables.tf)). RAG ingest may use a different region if you configured `rag_corpus_ingest_region` (see [docs/rag-ingestion.md](docs/rag-ingestion.md)).
 
@@ -74,6 +74,6 @@ Details and tables: [terraform/README.md](terraform/README.md) and [docs/archite
 
 Set `cloud_run_custom_domain` in Terraform (see [terraform/README.md](terraform/README.md)). CORS is configured with `cors_allowed_origins`.
 
-## Optional: remote Terraform state
+## Terraform remote state
 
-Copy [terraform/backend.tf.example](terraform/backend.tf.example) to `backend.tf`, set bucket and prefix, then `terraform init -migrate-state`. Use a **dedicated** state bucket, not the RAG corpus bucket.
+[terraform/backend.tf](terraform/backend.tf) configures a **GCS** backend (tracked so **GitHub Actions** and local runs share state). Create the bucket and migrate once if needed — see [terraform/README.md](terraform/README.md). Use a **dedicated** state bucket, not the RAG corpus bucket. [terraform/backend.tf.example](terraform/backend.tf.example) is a template for forks.

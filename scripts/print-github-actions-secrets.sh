@@ -4,6 +4,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/../terraform"
 
+if [ -z "$(terraform state list 2>/dev/null || true)" ]; then
+  echo "No Terraform state (nothing applied yet, or init/backend failed). Run:" >&2
+  echo "  cd terraform && terraform init -reconfigure && terraform plan && terraform apply" >&2
+  exit 1
+fi
+
 terraform output -raw project_id_for_github >/dev/null
 
 echo ""
@@ -17,6 +23,20 @@ terraform output -raw github_actions_wif_provider
 echo ""
 echo "GCP_SERVICE_ACCOUNT_EMAIL"
 terraform output -raw github_actions_deployer_email
+echo ""
+echo "TERRAFORM_TFVARS  (create as secret: full file body for terraform.yml)"
+echo "  gh secret set TERRAFORM_TFVARS < terraform/terraform.tfvars"
+echo ""
+echo "=== Ingest RAG corpus workflow (no extra GitHub Variables) ==="
+echo "Bucket + RagCorpus come from terraform output (remote state)."
+echo "Set in terraform.tfvars: gha_terraform_state_bucket = same GCS bucket as terraform/backend.tf"
+echo "then terraform apply so the GitHub deploy SA can run terraform init in CI."
+echo ""
+echo "corpus_bucket_name (reference)"
+terraform output -raw corpus_bucket_name
+echo ""
+echo "rag_corpus_resource_name (reference — must match rag_corpus_resource_name in tfvars / state)"
+terraform output -raw rag_corpus_resource_name
 echo ""
 echo "=== Optional: idle digest job (Terraform digest_job.tf + README) ==="
 digest_job=""

@@ -9,7 +9,7 @@ resource "google_service_account" "github_deploy" {
   count = local.github_wif_enabled ? 1 : 0
 
   account_id   = "${var.name_prefix}-gha-deploy"
-  display_name = "GitHub Actions deploy (push AR + update Cloud Run)"
+  display_name = "GitHub Actions (deploy, ingest, optional terraform)"
   project      = var.project_id
 }
 
@@ -47,6 +47,27 @@ resource "google_storage_bucket_iam_member" "corpus_github_deploy_object_viewer"
   bucket = google_storage_bucket.corpus.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.github_deploy[0].email}"
+}
+
+# Remote state: read for ingest/plan; read+write when GitHub runs terraform apply (github_actions_terraform_roles non-empty).
+resource "google_storage_bucket_iam_member" "github_deploy_terraform_state_access" {
+  count = local.github_wif_enabled && trimspace(var.gha_terraform_state_bucket) != "" ? 1 : 0
+
+  bucket = var.gha_terraform_state_bucket
+  role   = length(var.github_actions_terraform_roles) > 0 ? "roles/storage.objectAdmin" : "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.github_deploy[0].email}"
+}
+
+resource "google_project_iam_member" "github_deploy_terraform_roles" {
+  for_each = (
+    local.github_wif_enabled && length(var.github_actions_terraform_roles) > 0
+    ? toset(var.github_actions_terraform_roles)
+    : toset([])
+  )
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.github_deploy[0].email}"
 }
 
 # Allow gcloud run services update to keep using the runtime service account on the revision.

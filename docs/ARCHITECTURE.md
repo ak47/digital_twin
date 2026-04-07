@@ -30,6 +30,7 @@ flowchart TB
     subgraph github["GitHub Actions"]
         DeployWF["deploy-api.yml\npush main / dispatch"]
         IngestWF["ingest-rag-corpus.yml\nworkflow_dispatch only"]
+        TfWF["terraform.yml\nPR/main plan;\ndispatch apply"]
     end
 
     subgraph repo["Repository (operators)"]
@@ -41,7 +42,8 @@ flowchart TB
     Dev --> CR
     DeployWF --> AR
     DeployWF --> CR
-    IngestWF -->|"WIF auth; pip -e .;\npython scripts/ingest_rag_corpus.py"| Corpus
+    IngestWF -->|"WIF; terraform init/output;\npip -e .; ingest_rag_corpus.py"| Corpus
+    TfWF -.->|"WIF; plan/apply\nremote state"| GCS_C
     RagSrc -->|"local ingest or\ngsutil cp → bucket"| GCS_C
     GCS_C -->|"import_files"| Corpus
     RAGCfg -.->|"provisions DB tier"| Corpus
@@ -64,8 +66,8 @@ flowchart TB
 - **RAG is optional**: If `RAG_CORPUS_RESOURCE` is unset, answers use **`system.md` only** (no retrieval). When set, `rag_vertex.fetch_rag_context` runs **`vertexai.rag.retrieval_query`**, formats chunks, and **`llm.stream_reply`** appends them to the system instruction before calling Gemini.
 - **Two regions**: **Gemini** uses **`GCP_REGION`** (default `us-central1` on Cloud Run). **Retrieval** initializes Vertex in the **location embedded in `RAG_CORPUS_RESOURCE`** (e.g. `.../locations/europe-west4/ragCorpora/...` when using a backup ingest region). See `rag_vertex.py` and `terraform/README.md` (RAG backup region).
 - **Tuning**: **`RAG_TOP_K`**, optional **`RAG_VECTOR_DISTANCE_THRESHOLD`** (see `main.py` / `.env.example`).
-- **`RAG_CORPUS_RESOURCE` on Cloud Run**: Set via Terraform **`rag_corpus_resource_name`** → env on the service. **Deploy API** can also pass repository **Variable** `RAG_CORPUS_RESOURCE` on each deploy (`gcloud run services update` merges env vars); keep this aligned with the corpus you actually imported.
-- **Terraform remote state**: Optional GCS backend — copy `terraform/backend.tf.example` to `backend.tf` after creating a state bucket (`terraform/versions.tf`).
+- **`RAG_CORPUS_RESOURCE` on Cloud Run**: Set via Terraform **`rag_corpus_resource_name`** → env on the service (source of truth). **Deploy API** may pass repository **Variable** `RAG_CORPUS_RESOURCE` only as an intentional override; leave unset to avoid drifting from Terraform. **Ingest RAG corpus** reads **`rag_corpus_resource_name`** from remote Terraform state (with **`gha_terraform_state_bucket`** IAM), not from extra GitHub Variables.
+- **Terraform remote state**: **GCS** backend in committed `terraform/backend.tf` (same bucket as `gha_terraform_state_bucket`); see `terraform/README.md`. `terraform/backend.tf.example` is a fork template.
 
 ## Deployment pipeline (API image)
 
@@ -90,7 +92,7 @@ flowchart LR
     PushImg --> JobImg
 ```
 
-On deploy, **environment variables** for the **API service** use a **custom delimiter** (`^;^`) so **`CORS_ALLOWED_ORIGINS`** can contain commas. Optional repository **Variables** include **`RAG_CORPUS_RESOURCE`** and **`CORS_ALLOWED_ORIGINS`**. **Idle digest** Gmail and recipients are configured on the **Cloud Run Job** via Terraform, not the deploy workflow. If **`SESSION_DIGEST_JOB_NAME`** is set, the workflow also updates that job’s **image** to match the API image.
+On deploy, **environment variables** for the **API service** use a **custom delimiter** (`^;^`) so **`CORS_ALLOWED_ORIGINS`** can contain commas. Optional repository **Variables** include **`CORS_ALLOWED_ORIGINS`** and, only if overriding Terraform, **`RAG_CORPUS_RESOURCE`**. **Idle digest** Gmail and recipients are configured on the **Cloud Run Job** via Terraform, not the deploy workflow. If **`SESSION_DIGEST_JOB_NAME`** is set, the workflow also updates that job’s **image** to match the API image.
 
 Secret names and copying Terraform outputs into GitHub are documented in **`terraform/README.md`** and helper **`scripts/print-github-actions-secrets.sh`**.
 
@@ -104,7 +106,7 @@ flowchart LR
         A["scripts/ingest_rag_corpus.py\n--project-id … --files …"]
         A --> B["Upload to corpus bucket"]
         B --> C["create_corpus + import_files"]
-        C --> D["Print RAG_CORPUS_RESOURCE\n→ tfvars / GitHub Variable / .env"]
+        C --> D["Print rag_corpus_resource_name\n→ tfvars / terraform apply"]
     end
 
     subgraph refresh["Re-import after gs:// changes"]
@@ -114,7 +116,7 @@ flowchart LR
     end
 ```
 
-- **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Requires the same **secrets** as Deploy API plus repository **Variables** **`CORPUS_BUCKET_NAME`** and **`RAG_CORPUS_RESOURCE`**; optional **`RAG_INGEST_REGION`** (default **`europe-west4`** if not inferable). The workflow runs **`ingest_rag_corpus.py`** with **`--skip-upload`**, which imports the **entire** `gs://<bucket>/rag-sources/` prefix; **`--files`** in the workflow only satisfies the CLI (see **[rag-ingestion.md](rag-ingestion.md)**).
+- **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Same **secrets** as Deploy API; **`terraform init`** / **`terraform output`** supply **`corpus_bucket_name`** and **`rag_corpus_resource_name`** (set **`gha_terraform_state_bucket`** + apply for state-bucket IAM). Then **`ingest_rag_corpus.py`** with **`--skip-upload`** imports the **entire** `gs://<bucket>/rag-sources/` prefix; **`--files`** only satisfies the CLI (see **[rag-ingestion.md](rag-ingestion.md)**).
 - **Local full ingest**: **`pip install -e .`**, ADC (`gcloud auth application-default login`), then **`scripts/ingest_rag_corpus.py`** (can create corpus, upload, import, and optionally ensure RAG engine tier — see script docstring).
 
 ## Idle session digest (email)
@@ -229,7 +231,8 @@ sequenceDiagram
 | `scripts/ingest_rag_corpus.py` | Upload to corpus bucket, corpus create/import, CLI |
 | `scripts/print-github-actions-secrets.sh` | Helper to print Terraform outputs for GitHub secrets |
 | `terraform/` | Cloud Run, buckets, RAG engine, IAM, Artifact Registry, optional WIF |
-| `terraform/backend.tf.example` | Template for GCS remote state |
+| `terraform/backend.tf` | GCS remote state backend (tracked; CI + local) |
+| `terraform/backend.tf.example` | Template for forks / alternate buckets |
 | `.github/workflows/deploy-api.yml` | Build/push image, update Cloud Run |
 | `.github/workflows/ingest-rag-corpus.yml` | Manual RAG re-import from bucket |
 

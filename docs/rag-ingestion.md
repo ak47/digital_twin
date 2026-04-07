@@ -32,8 +32,8 @@ The script uploads objects to `gs://<bucket>/rag-sources/<filename>`, creates a 
 
 Wire the API:
 
-- **Terraform:** `rag_corpus_resource_name` in `terraform.tfvars` (or `TF_VAR_rag_corpus_resource_name`), then `terraform apply`.
-- **GitHub Actions:** repository **Variable** `RAG_CORPUS_RESOURCE` with the same string (deploy workflow can merge env into Cloud Run).
+- **Terraform:** `rag_corpus_resource_name` in `terraform.tfvars` (or `TF_VAR_rag_corpus_resource_name`), then `terraform apply`. This is the **single source of truth** for Cloud Run **`RAG_CORPUS_RESOURCE`** and for **`terraform output rag_corpus_resource_name`** (used by the ingest workflow).
+- **GitHub Actions (optional):** repository **Variable** `RAG_CORPUS_RESOURCE` on deploy **only** if you intentionally override Terraform without applying; leave it unset to avoid drift.
 
 ## Production content updates (existing corpus)
 
@@ -54,10 +54,10 @@ Use the same bucket Terraform outputs as **`corpus_bucket_name`**.
 **Option A — GitHub Actions (recommended for prod)**
 
 1. Repository **Secrets** (same as Deploy API): `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT_EMAIL`, `GCP_PROJECT_ID`.
-2. Repository **Variables**: **`CORPUS_BUCKET_NAME`**, **`RAG_CORPUS_RESOURCE`** (required). Optional **`RAG_INGEST_REGION`** if the corpus is not in `us-central1` and the name does not embed a location (workflow default is `europe-west4` when not inferable — align this with your corpus).
+2. **Terraform:** set **`gha_terraform_state_bucket`** in `terraform.tfvars` to the **same GCS bucket** as `terraform/backend.tf` (remote state), then **`terraform apply`**. That grants the GitHub deploy service account **`storage.objectViewer`** on the state bucket so CI can run **`terraform init`** and read **`corpus_bucket_name`** + **`rag_corpus_resource_name`** from state — **no** duplicate repository Variables `CORPUS_BUCKET_NAME` / `RAG_CORPUS_RESOURCE`.
 3. Run workflow **[Ingest RAG corpus](https://github.com/ak47/digital_twin/actions)** (**workflow_dispatch**).
 
-The workflow runs `ingest_rag_corpus.py` with **`--skip-upload`**. With **`--skip-upload`**, the script imports the **entire prefix** `gs://<bucket>/rag-sources/`; the **`--files`** argument in the workflow exists only to satisfy the CLI parser and does **not** limit which bucket objects are imported.
+The workflow runs `terraform init` / `terraform output`, then `ingest_rag_corpus.py` with **`--skip-upload`** and **`--strict-import`**. The job **fails** if Vertex reports any **failed** imports or if **`imported_rag_files_count` is 0** (so an all-skipped run does not show green). With **`--skip-upload`**, the script imports the **entire prefix** `gs://<bucket>/rag-sources/`; the **`--files`** argument in the workflow exists only to satisfy the CLI parser and does **not** limit which bucket objects are imported.
 
 **Option B — Local**
 
@@ -80,14 +80,15 @@ After a successful re-import, **Cloud Run does not need a new revision** for con
 
 ### 3. If the API still looks stale
 
-- Confirm **`RAG_CORPUS_RESOURCE`** on the service matches the corpus you imported into (Terraform output / GitHub Variable / `gcloud run services describe`).
-- Retrieval uses the **location embedded in the corpus resource name**; Gemini generation uses **`GCP_REGION`** on the service. See [architecture.md](architecture.md).
+- Confirm **`RAG_CORPUS_RESOURCE`** on the service **exactly matches** **`rag_corpus_resource_name`** in Terraform state (and avoid setting the deploy workflow’s **`RAG_CORPUS_RESOURCE`** repository Variable unless you mean to override Terraform). A typo or an old corpus id means the app queries a different index than CI updates.
+- After ingest, read **`Vertex import result: imported=…, skipped=…, failed=…`** in the Actions log. **`imported=0` with `skipped>0`** usually means Vertex treated GCS URIs as unchanged — overwriting a blob in place often **does not** re-embed; rename the object or delete the RagFile in the Vertex console, then re-import.
+- Retrieval uses the **location embedded in the corpus resource name**; Gemini generation uses **`GEMINI_LOCATION` / `GCP_REGION`**. The API initializes Vertex retrieval using the **project in the corpus resource name** so it stays aligned even if **`GCP_PROJECT_ID`** on Cloud Run is wrong. See [architecture.md](architecture.md).
 
 ## Troubleshooting
 
 - **`import_files` 500** — Run **`terraform apply`** so RAG Engine config and corpus bucket IAM for the Vertex AI service agent are present, then retry.
 - **Allowlist / RAG Engine region** — See [terraform/README.md](../terraform/README.md) → *RAG* and *RAG backup region*.
-- **CI ingest fails on secrets/variables** — The workflow checks for the same GCP secrets as deploy and for **`CORPUS_BUCKET_NAME`** and **`RAG_CORPUS_RESOURCE`**. See [.github/workflows/ingest-rag-corpus.yml](../.github/workflows/ingest-rag-corpus.yml).
+- **CI ingest fails at `terraform init`** — Ensure **`gha_terraform_state_bucket`** matches **`backend.tf`** and **`terraform apply`** has granted the deploy SA read access to state. See [.github/workflows/ingest-rag-corpus.yml](../.github/workflows/ingest-rag-corpus.yml).
 
 ## Related
 

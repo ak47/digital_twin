@@ -1,0 +1,102 @@
+# Run Terraform from GitHub (same WIF + secrets as deploy). Keeps infra changes in one place.
+#
+# Secrets (repository):
+#   GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID — same as Deploy API
+#   TERRAFORM_TFVARS — full multiline body of your gitignored terraform/terraform.tfvars (must match prod)
+#
+# IAM: set github_actions_terraform_roles + gha_terraform_state_bucket in tfvars (match backend.tf); apply once
+# so this SA can plan/apply. See terraform/README.md → GitHub Actions Terraform.
+
+name: Terraform
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Run terraform apply after plan (unchecked = plan only)
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  terraform:
+    # Fork PRs have no repo secrets; skip instead of failing a required check noise.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check secrets
+        env:
+          GCP_WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SA_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          TFVARS: ${{ secrets.TERRAFORM_TFVARS }}
+        run: |
+          missing=""
+          [ -z "${GCP_WIF_PROVIDER}" ] && missing="${missing} GCP_WORKLOAD_IDENTITY_PROVIDER"
+          [ -z "${GCP_SA_EMAIL}" ] && missing="${missing} GCP_SERVICE_ACCOUNT_EMAIL"
+          [ -z "${GCP_PROJECT_ID}" ] && missing="${missing} GCP_PROJECT_ID"
+          [ -z "${TFVARS}" ] && missing="${missing} TERRAFORM_TFVARS"
+          if [ -n "${missing}" ]; then
+            echo "::error::Missing repository secrets:${missing}"
+            echo "Set TERRAFORM_TFVARS to the full contents of terraform/terraform.tfvars (see terraform/README.md)."
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Write terraform.tfvars
+        env:
+          TFVARS_CONTENT: ${{ secrets.TERRAFORM_TFVARS }}
+        run: printf '%s\n' "${TFVARS_CONTENT}" > terraform/terraform.tfvars
+
+      - name: Terraform fmt (check)
+        run: terraform -chdir=terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform -chdir=terraform init -input=false -no-color
+
+      - name: Terraform validate
+        run: terraform -chdir=terraform validate -no-color
+
+      - name: Terraform plan
+        run: terraform -chdir=terraform plan -input=false -no-color -out=tfplan
+
+      - name: Terraform show (readable plan)
+        run: terraform -chdir=terraform show -no-color tfplan
+
+      - name: Terraform apply
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          (github.event.inputs.apply == true || github.event.inputs.apply == 'true')
+        run: terraform -chdir=terraform apply -input=false -no-color -auto-approve tfplan

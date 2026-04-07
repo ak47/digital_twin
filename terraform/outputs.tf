@@ -12,6 +12,11 @@ output "corpus_bucket_name" {
   value       = google_storage_bucket.corpus.name
 }
 
+output "rag_corpus_resource_name" {
+  description = "Full Vertex RagCorpus resource wired to Cloud Run RAG_CORPUS_RESOURCE (same as var.rag_corpus_resource_name)."
+  value       = var.rag_corpus_resource_name
+}
+
 output "sessions_bucket_name" {
   description = "Cloud Run stores per-session JSON under a prefix (e.g. sessions/)."
   value       = google_storage_bucket.sessions.name

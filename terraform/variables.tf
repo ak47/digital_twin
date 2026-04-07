@@ -103,6 +103,27 @@ variable "github_repository" {
   }
 }
 
+variable "gha_terraform_state_bucket" {
+  description = <<-EOT
+    GCS bucket from terraform/backend.tf that holds remote state. When non-empty and GitHub WIF is enabled,
+    grants the GitHub deploy SA storage access for terraform init. Use roles/storage.objectViewer when
+    github_actions_terraform_roles is empty (ingest + plan read-only); objectAdmin when non-empty (apply writes state).
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "github_actions_terraform_roles" {
+  description = <<-EOT
+    Extra project IAM roles for the GitHub deploy SA so .github/workflows/terraform.yml can run terraform apply.
+    Typical for a dedicated GCP project: ["roles/editor", "roles/resourcemanager.projectIamAdmin"].
+    Leave empty (default) if you only run terraform from your laptop — ingest still works with gha_terraform_state_bucket + viewer.
+    Bootstrap: add these roles and apply once locally before the first successful GHA apply.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "session_digest_enabled" {
   description = "Provision Cloud Run Job + Cloud Scheduler for idle session transcript emails (GCS + Gmail)."
   type        = bool

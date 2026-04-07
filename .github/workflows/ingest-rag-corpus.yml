@@ -1,15 +1,17 @@
-# Re-import gs://…/rag-sources into an existing Vertex RAG corpus (same RAG_CORPUS_RESOURCE).
-# Upload changed files to the corpus bucket first (e.g. gsutil cp … gs://BUCKET/rag-sources/).
+# Re-import gs://…/rag-sources into the Vertex RagCorpus already wired in Terraform (rag_corpus_resource_name).
+# Upload changed files to the corpus bucket first (e.g. gcloud storage cp … gs://BUCKET/rag-sources/).
 #
-# Repository Variables: CORPUS_BUCKET_NAME, RAG_CORPUS_RESOURCE (required).
-# Optional: RAG_INGEST_REGION (fallback when corpus name has no /locations/REGION/; else inferred).
+# Corpus bucket + RagCorpus resource name are read from remote Terraform state (terraform output) so they
+# stay aligned with Cloud Run — no duplicate GitHub Variables (CORPUS_BUCKET_NAME / RAG_CORPUS_RESOURCE).
+#
 # Secrets: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID (same as Deploy API).
-# Those three must refer to the SAME GCP project that OWNS RAG_CORPUS_RESOURCE (see terraform output
-# project_id_for_github + github_actions_deployer_email). A mismatched SA will still get tokens but
-# lack aiplatform.ragFiles.import in the corpus project.
+# Terraform: set gha_terraform_state_bucket in tfvars to the same GCS bucket as backend.tf, then
+# terraform apply (grants the GitHub deploy SA storage.objectViewer on the state bucket for terraform init).
+#
 # The ingest script skips RagEngineConfig GET for existing corpora so the SA need not have
 # aiplatform.ragEngineConfigs.get. rag.import_files requires aiplatform.ragFiles.import plus corpus
 # bucket read; Terraform grants roles/aiplatform.user and storage.objectViewer on the corpus bucket.
+# The workflow passes --strict-import: the job fails if Vertex reports import failures or imported=0.
 
 name: Ingest RAG corpus
 
@@ -44,20 +46,15 @@ jobs:
             exit 1
           fi
 
-      - name: Check corpus variables
-        env:
-          BUCKET: ${{ vars.CORPUS_BUCKET_NAME }}
-          CORPUS: ${{ vars.RAG_CORPUS_RESOURCE }}
-        run: |
-          if [ -z "${BUCKET}" ] || [ -z "${CORPUS}" ]; then
-            echo "::error::Set Actions Variables CORPUS_BUCKET_NAME and RAG_CORPUS_RESOURCE"
-            exit 1
-          fi
-
       - uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
 
       - uses: actions/setup-python@v6
         with:
@@ -125,8 +122,7 @@ jobs:
           if email and expected and email != expected:
               print(
                   "::error::Credential targets a different service account than GCP_SERVICE_ACCOUNT_EMAIL. "
-                  "Fix repository secrets to match terraform output github_actions_deployer_email "
-                  "for the project that contains RAG_CORPUS_RESOURCE."
+                  "Fix repository secrets to match terraform output github_actions_deployer_email."
               )
               raise SystemExit(1)
           if expected and not email:
@@ -136,19 +132,28 @@ jobs:
               )
           PY
 
-      - name: Ingest RAG corpus
+      - name: Terraform init & ingest
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          BUCKET: ${{ vars.CORPUS_BUCKET_NAME }}
-          CORPUS: ${{ vars.RAG_CORPUS_RESOURCE }}
-          RAG_INGEST_REGION: ${{ vars.RAG_INGEST_REGION }}
         run: |
           set -eu
-          REGION="${RAG_INGEST_REGION:-europe-west4}"
+          cd terraform
+          terraform init -input=false -no-color
+          BUCKET="$(terraform output -raw corpus_bucket_name)"
+          CORPUS="$(terraform output -raw rag_corpus_resource_name)"
+          cd ..
+          if [ -z "${CORPUS}" ]; then
+            echo "::error::Terraform output rag_corpus_resource_name is empty. Set rag_corpus_resource_name in terraform.tfvars and run terraform apply."
+            exit 1
+          fi
+          echo "Corpus bucket (from Terraform state): ${BUCKET}"
+          echo "RagCorpus (from Terraform state, same as Cloud Run when TF-managed): ${CORPUS}"
+          # --region is only used if the corpus name lacks /locations/REGION/ (it should not).
           python scripts/ingest_rag_corpus.py \
             --project-id "${PROJECT_ID}" \
-            --region "${REGION}" \
+            --region "us-central1" \
             --bucket "${BUCKET}" \
             --corpus-resource-name "${CORPUS}" \
             --skip-upload \
+            --strict-import \
             --files README.md

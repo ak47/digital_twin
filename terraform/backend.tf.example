@@ -1,10 +1,11 @@
-# Optional remote state — copy to backend.tf (gitignored) when you want state in GCS.
+# This repo commits terraform/backend.tf for GCS state (GitHub Actions + local).
+# Use this file only as a template for forks or a scratch backend when experimenting.
 #
-#   cp backend.tf.example backend.tf
+#   cp backend.tf.example backend.tf   # if replacing the committed backend locally
 #   # Edit bucket/prefix, create bucket + versioning (see README).
 #   terraform init -migrate-state
 #
-# Omit backend.tf entirely for default local state (terraform.tfstate in this directory).
+# Omit backend block for default local state (terraform.tfstate in this directory).
 
 terraform {
   backend "gcs" {

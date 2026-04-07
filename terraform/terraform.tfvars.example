@@ -16,5 +16,11 @@
 # cloud_run_custom_domain = "digital-twin.no-ego.net"   # optional; verify no-ego.net for GCP first
 # rag_corpus_resource_name = "projects/your-project/locations/us-central1/ragCorpora/your-corpus-id"
 #
+# Same bucket name as terraform/backend.tf — Ingest RAG + terraform.yml need remote state access:
+# gha_terraform_state_bucket = "your-terraform-state-bucket"
+#
+# Let GitHub Actions run terraform plan/apply (.github/workflows/terraform.yml); bootstrap with one local apply:
+# github_actions_terraform_roles = ["roles/editor", "roles/resourcemanager.projectIamAdmin"]
+#
 # Teardown / project migration only (deletes bucket contents with the bucket):
 # bucket_force_destroy = true

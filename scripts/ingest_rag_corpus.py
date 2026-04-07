@@ -20,6 +20,9 @@ default BASIC) if the regional RAG Engine is still unprovisioned — same API Go
 
 If rag.import_files fails with 500 after upload: terraform apply (RAG Engine + corpus bucket IAM);
 see terraform/README.md → RAG.
+
+Any failed_rag_files_count from Vertex always exits 1. Use --strict-import (GitHub Actions does) to
+also exit 1 when imported_rag_files_count is 0 so CI does not go green on an all-skipped import.
 """
 from __future__ import annotations
 
@@ -201,6 +204,15 @@ def main() -> None:
             "when possible; otherwise use --region."
         ),
     )
+    parser.add_argument(
+        "--strict-import",
+        action="store_true",
+        help=(
+            "Exit with status 1 if Vertex reports imported_rag_files_count==0 after import. "
+            "Use in CI when a green run must mean at least one GCS object was newly ingested "
+            "(skips alone do not count). Omit for idempotent local re-import when unchanged URIs are OK."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.project_id.strip():
@@ -346,7 +358,7 @@ def main() -> None:
             print(f"Import retry {attempt + 1}/{args.import_retries} after {delay}s...", file=sys.stderr)
             time.sleep(delay)
         try:
-            rag.import_files(
+            import_resp = rag.import_files(
                 rag_corpus.name,
                 import_paths,
                 transformation_config=rag.TransformationConfig(
@@ -359,6 +371,37 @@ def main() -> None:
                 timeout=3600,
                 **import_kw,
             )
+            imp = int(getattr(import_resp, "imported_rag_files_count", 0) or 0)
+            skp = int(getattr(import_resp, "skipped_rag_files_count", 0) or 0)
+            fail = int(getattr(import_resp, "failed_rag_files_count", 0) or 0)
+            print(
+                f"Vertex import result: imported={imp}, skipped={skp}, failed={fail}",
+                file=sys.stderr,
+            )
+            if fail:
+                print(
+                    "::error::RAG import reported failed_rag_files_count=%s — corpus was not fully updated. "
+                    "See --import-result-sink or the Vertex console for this corpus."
+                    % fail,
+                    file=sys.stderr,
+                )
+                raise SystemExit(1)
+            if imp == 0 and skp > 0:
+                print(
+                    "::warning::0 new files imported; Vertex skipped existing URIs. "
+                    "In-place GCS overwrites often do NOT refresh embeddings — rename objects, "
+                    "remove RagFiles in the console, or use a new corpus. "
+                    "Also confirm Cloud Run RAG_CORPUS_RESOURCE exactly matches this corpus.",
+                    file=sys.stderr,
+                )
+            if args.strict_import and imp == 0:
+                print(
+                    "::error::Strict import: imported_rag_files_count is 0 — nothing new was indexed. "
+                    "Upload or rename objects under the import prefix, remove stale RagFiles, or omit "
+                    "--strict-import for an idempotent no-op re-import.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(1)
             break
         except gcp_exceptions.PermissionDenied as e:
             msg = str(e).lower()
@@ -396,7 +439,9 @@ def main() -> None:
         print("")
         print(f"  export TF_VAR_rag_corpus_resource_name={resource!r}")
         print("")
-        print("Cloud Run / GitHub Actions variable RAG_CORPUS_RESOURCE: same string, no TF_VAR_ prefix.")
+        print(
+            "Cloud Run: set TF_VAR_rag_corpus_resource_name (terraform apply) — same string as RAG_CORPUS_RESOURCE."
+        )
     print("")
     print(
         f"(Corpus Vertex location: {vertex_location} — retrieval uses this; Gemini uses GCP_REGION from the app.)"
