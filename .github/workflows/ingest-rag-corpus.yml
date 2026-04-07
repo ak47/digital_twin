@@ -66,40 +66,74 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
-      - name: Verify WIF token matches GCP_SERVICE_ACCOUNT_EMAIL
+      - name: Verify WIF credential targets GCP_SERVICE_ACCOUNT_EMAIL
         env:
           EXPECTED_SA: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
         run: |
           python3 - <<'PY'
           import json
           import os
+          import re
           import urllib.parse
           import urllib.request
 
           import google.auth
           import google.auth.transport.requests
 
+          def sa_from_credentials_file(path: str) -> str:
+              with open(path, encoding="utf-8") as f:
+                  cfg = json.load(f)
+              t = (cfg.get("type") or "").strip()
+              if t == "service_account":
+                  return (cfg.get("client_email") or "").strip()
+              imp = cfg.get("service_account_impersonation_url") or ""
+              if imp:
+                  m = re.search(r"/serviceAccounts/([^:]+):generateAccessToken", imp)
+                  if m:
+                      return m.group(1).strip()
+              sai = cfg.get("service_account_impersonation") or {}
+              if isinstance(sai, dict):
+                  return (sai.get("service_account_email") or "").strip()
+              return ""
+
+          def sa_from_tokeninfo(token: str) -> str:
+              url = "https://oauth2.googleapis.com/tokeninfo?access_token=" + urllib.parse.quote(
+                  token, safe=""
+              )
+              with urllib.request.urlopen(url) as resp:
+                  info = json.load(resp)
+              return (info.get("email") or "").strip()
+
           expected = (os.environ.get("EXPECTED_SA") or "").strip()
-          creds, _ = google.auth.default(
-              scopes=["https://www.googleapis.com/auth/cloud-platform"]
+          gac = (os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
+          email = ""
+          if gac and os.path.isfile(gac):
+              email = sa_from_credentials_file(gac)
+          if not email:
+              creds, _ = google.auth.default(
+                  scopes=["https://www.googleapis.com/auth/cloud-platform"]
+              )
+              creds.refresh(google.auth.transport.requests.Request())
+              email = sa_from_tokeninfo(creds.token)
+
+          print(
+              "Impersonated / credential service account (needs aiplatform.ragFiles.import):",
+              email or "(could not resolve)",
           )
-          creds.refresh(google.auth.transport.requests.Request())
-          url = "https://oauth2.googleapis.com/tokeninfo?access_token=" + urllib.parse.quote(
-              creds.token, safe=""
-          )
-          with urllib.request.urlopen(url) as resp:
-              info = json.load(resp)
-          email = (info.get("email") or "").strip()
-          print("Token identity (this principal must have aiplatform.ragFiles.import):", email or "(missing)")
           if expected:
               print("GCP_SERVICE_ACCOUNT_EMAIL secret:", expected)
           if email and expected and email != expected:
               print(
-                  "::error::WIF access token email does not match GCP_SERVICE_ACCOUNT_EMAIL. "
+                  "::error::Credential targets a different service account than GCP_SERVICE_ACCOUNT_EMAIL. "
                   "Fix repository secrets to match terraform output github_actions_deployer_email "
                   "for the project that contains RAG_CORPUS_RESOURCE."
               )
               raise SystemExit(1)
+          if expected and not email:
+              print(
+                  "::warning::Could not read impersonated SA from GOOGLE_APPLICATION_CREDENTIALS or tokeninfo; "
+                  "skipping equality check."
+              )
           PY
 
       - name: Ingest RAG corpus
