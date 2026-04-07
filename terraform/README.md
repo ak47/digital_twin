@@ -105,6 +105,8 @@ An old pool id may exist in GCP but not in Terraform state. This stack now uses 
 
 ### RAG: upload `knowledge.txt` / `Profile.pdf` and ingest
 
+End-to-end operator flow (production updates, CI ingest): **[`docs/rag-ingestion.md`](../docs/rag-ingestion.md)**.
+
 Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.region`** (default `us-central1`), provisions the **Vertex AI service identity** for `aiplatform.googleapis.com`, then grants that principal **`storage.objectViewer`** on the corpus bucket. Optional **`rag_corpus_ingest_region`** adds a second RAG Engine region for non-default ingest layouts. You still **upload files** and **create a RAG corpus + import** (Vertex does not auto-read the bucket).
 
 1. **Bucket name** (after `terraform apply`):
@@ -140,9 +142,9 @@ Google may block **RAG Engine** in `us-central1` for new projects until allowlis
 
 **Unprovisioned RAG Engine:** `scripts/ingest_rag_corpus.py` calls **`UpdateRagEngineConfig`** (Basic or Scaled, from **`TF_VAR_rag_engine_tier`**, default BASIC) before **`create_corpus`** when the regional tier is still inactive — no manual `-replace` step.
 
-**Re-import into the same corpus** (after `gsutil` upload to `rag-sources/`):  
-`python3 scripts/ingest_rag_corpus.py --project-id … --corpus-resource-name 'projects/…/ragCorpora/…' --skip-upload --files README.md`  
-(or GitHub Actions **Ingest RAG corpus** — set Variables **`CORPUS_BUCKET_NAME`** and **`RAG_CORPUS_RESOURCE`**; see **`.github/workflows/ingest-rag-corpus.yml`**). No change to **`RAG_CORPUS_RESOURCE`** on Cloud Run.
+**Re-import into the same corpus** (after upload to `rag-sources/`): with **`--skip-upload`**, the script imports the **whole** `gs://<bucket>/rag-sources/` prefix; pass any **`--files`** value to satisfy the CLI (the workflow uses a placeholder). Example:  
+`python3 scripts/ingest_rag_corpus.py --project-id … --corpus-resource-name 'projects/…/ragCorpora/…' --skip-upload --files .`  
+Or use GitHub Actions **Ingest RAG corpus** (Variables **`CORPUS_BUCKET_NAME`**, **`RAG_CORPUS_RESOURCE`**; see **`.github/workflows/ingest-rag-corpus.yml`**). No change to **`RAG_CORPUS_RESOURCE`** on Cloud Run.
 
 3. **Wire Cloud Run** with the printed resource name:
 
@@ -185,4 +187,4 @@ Optional: **`session_digest_schedule`** (cron, default `*/15 * * * *`), **`sessi
 
 After apply, run **`./scripts/print-github-actions-secrets.sh`** and set GitHub repository **Variable** **`SESSION_DIGEST_JOB_NAME`** to **`terraform output -raw session_digest_job_name`** so **`.github/workflows/deploy-api.yml`** updates the job image on every deploy.
 
-See repository root **`README.md`** (*Idle session digest*) for Workspace / domain-wide delegation and broader context.
+See **[`docs/session-digest.md`](../docs/session-digest.md)** for Workspace / domain-wide delegation and broader context.

@@ -114,7 +114,7 @@ flowchart LR
     end
 ```
 
-- **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Requires the same **secrets** as Deploy API plus repository **Variables** **`CORPUS_BUCKET_NAME`** and **`RAG_CORPUS_RESOURCE`**; optional **`RAG_INGEST_REGION`** (default **`europe-west4`** if not inferable). The checked-in step runs **`ingest_rag_corpus.py`** with **`--skip-upload`** (assumes objects already in the bucket); adjust **`--files`** in the workflow if you need different globs.
+- **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Requires the same **secrets** as Deploy API plus repository **Variables** **`CORPUS_BUCKET_NAME`** and **`RAG_CORPUS_RESOURCE`**; optional **`RAG_INGEST_REGION`** (default **`europe-west4`** if not inferable). The workflow runs **`ingest_rag_corpus.py`** with **`--skip-upload`**, which imports the **entire** `gs://<bucket>/rag-sources/` prefix; **`--files`** in the workflow only satisfies the CLI (see **[rag-ingestion.md](rag-ingestion.md)**).
 - **Local full ingest**: **`pip install -e .`**, ADC (`gcloud auth application-default login`), then **`scripts/ingest_rag_corpus.py`** (can create corpus, upload, import, and optionally ensure RAG engine tier — see script docstring).
 
 ## Idle session digest (email)
@@ -155,7 +155,7 @@ flowchart TB
 
 **Optional tuning**: Terraform **`session_digest_idle_minutes`**, **`session_digest_display_timezone`** (`RESUME_BOT_DIGEST_TIMEZONE`), **`session_digest_schedule`** / **`session_digest_scheduler_timezone`**, `GCS_SESSIONS_PREFIX` (default `sessions`).
 
-**Runbook**: **`README.md`** → *Idle session digest*; Terraform **`terraform/README.md`** → *Idle session digest*.
+**Runbook**: **[session-digest.md](session-digest.md)**; Terraform **[`terraform/README.md`](../terraform/README.md)** → *Idle session digest*.
 
 ## In-process architecture (API service)
 
@@ -235,4 +235,4 @@ sequenceDiagram
 
 Runtime dependencies include **`google-genai`** (Gemini), **`google-cloud-aiplatform`** (Vertex RAG / ingest), **`google-api-python-client`** and **`google-auth`** (Gmail digest). See `pyproject.toml`.
 
-For day-to-day operations, secrets, and backlog items, see **`docs/WORKING.md`** and **`docs/REMAINING_WORK.md`**.
+For operator runbooks (RAG ingest, Terraform, digest), see the repository **[README.md](../README.md)** and **[rag-ingestion.md](rag-ingestion.md)**.
