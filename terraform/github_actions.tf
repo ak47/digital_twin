@@ -40,6 +40,15 @@ resource "google_project_iam_member" "github_deploy_vertex_user" {
   member  = "serviceAccount:${google_service_account.github_deploy[0].email}"
 }
 
+# Import may validate the caller can read gs:// corpus URIs (Vertex still ingests via its service agent).
+resource "google_storage_bucket_iam_member" "corpus_github_deploy_object_viewer" {
+  count = local.github_wif_enabled ? 1 : 0
+
+  bucket = google_storage_bucket.corpus.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.github_deploy[0].email}"
+}
+
 # Allow gcloud run services update to keep using the runtime service account on the revision.
 resource "google_service_account_iam_member" "github_deploy_act_as_runtime" {
   count = local.github_wif_enabled ? 1 : 0

@@ -47,6 +47,13 @@ resource "google_cloud_run_v2_job" "session_digest" {
   location = var.region
   project  = var.project_id
 
+  # CD updates the job image (deploy-api.yml); do not revert to var.container_image on apply.
+  lifecycle {
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+    ]
+  }
+
   template {
     template {
       timeout     = "900s"

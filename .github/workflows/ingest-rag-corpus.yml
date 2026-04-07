@@ -4,9 +4,12 @@
 # Repository Variables: CORPUS_BUCKET_NAME, RAG_CORPUS_RESOURCE (required).
 # Optional: RAG_INGEST_REGION (fallback when corpus name has no /locations/REGION/; else inferred).
 # Secrets: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID (same as Deploy API).
+# Those three must refer to the SAME GCP project that OWNS RAG_CORPUS_RESOURCE (see terraform output
+# project_id_for_github + github_actions_deployer_email). A mismatched SA will still get tokens but
+# lack aiplatform.ragFiles.import in the corpus project.
 # The ingest script skips RagEngineConfig GET for existing corpora so the SA need not have
-# aiplatform.ragEngineConfigs.get. rag.import_files requires aiplatform.ragFiles.import;
-# Terraform grants roles/aiplatform.user to the GitHub deploy SA (github_actions.tf).
+# aiplatform.ragEngineConfigs.get. rag.import_files requires aiplatform.ragFiles.import plus corpus
+# bucket read; Terraform grants roles/aiplatform.user and storage.objectViewer on the corpus bucket.
 
 name: Ingest RAG corpus
 
@@ -60,7 +63,46 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install & ingest
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Verify WIF token matches GCP_SERVICE_ACCOUNT_EMAIL
+        env:
+          EXPECTED_SA: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          import google.auth
+          import google.auth.transport.requests
+
+          expected = (os.environ.get("EXPECTED_SA") or "").strip()
+          creds, _ = google.auth.default(
+              scopes=["https://www.googleapis.com/auth/cloud-platform"]
+          )
+          creds.refresh(google.auth.transport.requests.Request())
+          url = "https://oauth2.googleapis.com/tokeninfo?access_token=" + urllib.parse.quote(
+              creds.token, safe=""
+          )
+          with urllib.request.urlopen(url) as resp:
+              info = json.load(resp)
+          email = (info.get("email") or "").strip()
+          print("Token identity (this principal must have aiplatform.ragFiles.import):", email or "(missing)")
+          if expected:
+              print("GCP_SERVICE_ACCOUNT_EMAIL secret:", expected)
+          if email and expected and email != expected:
+              print(
+                  "::error::WIF access token email does not match GCP_SERVICE_ACCOUNT_EMAIL. "
+                  "Fix repository secrets to match terraform output github_actions_deployer_email "
+                  "for the project that contains RAG_CORPUS_RESOURCE."
+              )
+              raise SystemExit(1)
+          PY
+
+      - name: Ingest RAG corpus
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           BUCKET: ${{ vars.CORPUS_BUCKET_NAME }}
@@ -68,7 +110,6 @@ jobs:
           RAG_INGEST_REGION: ${{ vars.RAG_INGEST_REGION }}
         run: |
           set -eu
-          pip install -e .
           REGION="${RAG_INGEST_REGION:-europe-west4}"
           python scripts/ingest_rag_corpus.py \
             --project-id "${PROJECT_ID}" \

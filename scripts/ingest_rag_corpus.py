@@ -360,6 +360,21 @@ def main() -> None:
                 **import_kw,
             )
             break
+        except gcp_exceptions.PermissionDenied as e:
+            msg = str(e).lower()
+            if "ragfiles.import" in msg or "rag_files.import" in msg:
+                print(
+                    "RAG import was denied (aiplatform.ragFiles.import).\n"
+                    "Fix: the identity in your ADC token must have roles/aiplatform.user (or equivalent) "
+                    "on the GCP project that OWNS the corpus in --corpus-resource-name "
+                    "(projects/<id>/locations/… — <id> is often a project number).\n"
+                    "GitHub Actions: set GCP_SERVICE_ACCOUNT_EMAIL to terraform output "
+                    "github_actions_deployer_email, GCP_PROJECT_ID to the same project, terraform apply "
+                    "(github_deploy_vertex_user + corpus_github_deploy_object_viewer), then re-run.\n"
+                    "If the token identity already matches that SA, wait a few minutes for IAM propagation.",
+                    file=sys.stderr,
+                )
+            raise
         except (gcp_exceptions.InternalServerError, gcp_exceptions.ServiceUnavailable):
             if attempt >= args.import_retries - 1:
                 tail = f"\nPer-file import details: {sink}" if sink else ""
