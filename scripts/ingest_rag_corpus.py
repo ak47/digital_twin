@@ -206,6 +206,15 @@ def main() -> None:
     if not args.project_id.strip():
         raise SystemExit("Set --project-id or GOOGLE_CLOUD_PROJECT or TF_VAR_project_id.")
 
+    pid = args.project_id.strip()
+    if pid.upper() == "YOUR_PROJECT_ID" or pid in ("<project-id>", "PROJECT_ID", "my-gcp-project"):
+        raise SystemExit(
+            f"--project-id was left as a documentation placeholder ({pid!r}). "
+            "Use your real GCP project id (e.g. gcloud config get-value project) or export "
+            "GOOGLE_CLOUD_PROJECT. It must match the project where Vertex AI RAG and the corpus "
+            "bucket live (see RAG_CORPUS_RESOURCE / terraform outputs)."
+        )
+
     bucket = args.bucket.strip()
     if not bucket:
         bucket = _terraform_corpus_bucket(repo_root)
