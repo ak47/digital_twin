@@ -15,6 +15,11 @@ from digital_twin.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
+# When RAG is configured but retrieval returns no chunks, the model must not fill gaps from priors.
+_RAG_EMPTY_RETRIEVAL_BLOCK = """## Retrieved documents (RAG)
+
+**No passages were retrieved for this query.** Do not invent or infer Andrew's projects, employers, dates, skills, hobbies, home lab, infrastructure, tools, or other biographical facts. Say that the materials do not cover this, or suggest the user rephrase."""
+
 
 def gemini_model_id() -> str:
     """Resolved Vertex model id (GEMINI_MODEL or default); used by chat and public metadata."""
@@ -66,8 +71,9 @@ def _load_system_instruction() -> str:
             base = f.read().strip()
     except OSError:
         base = (
-            "You answer as Andrew in the first person (I, me, my) from the materials "
-            "you are given. Be accurate and concise."
+            "You answer as Andrew in the first person (I, me, my). Only state facts "
+            "supported by Retrieved documents (RAG) in the system message; cite sources; "
+            "do not invent facts. Be concise."
         )
     return base
 
@@ -102,8 +108,8 @@ def stream_reply(
         rag_block = rag_vertex.fetch_rag_context(
             project, s.gcp_region, corpus, user_text
         )
-        if rag_block:
-            system = f"{system}\n\n---\n\n{rag_block}"
+        rag_block = rag_block or _RAG_EMPTY_RETRIEVAL_BLOCK
+        system = f"{system}\n\n---\n\n{rag_block}"
 
     try:
         from google import genai
@@ -141,6 +147,7 @@ def stream_reply(
             config=types.GenerateContentConfig(
                 system_instruction=system,
                 max_output_tokens=s.max_output_tokens,
+                temperature=s.gemini_temperature,
             ),
         )
         for chunk in stream:

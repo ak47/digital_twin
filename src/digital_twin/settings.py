@@ -25,6 +25,7 @@ class Settings:
 
     gemini_model: str
     gemini_location: str
+    gemini_temperature: float
     max_output_tokens: int
 
     resume_bot_digest_email_to: str
@@ -48,6 +49,14 @@ def _env_int(key: str, default: int) -> int:
         return default
 
 
+def _env_float(key: str, default: float) -> float:
+    raw = _env(key, str(default))
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     rpm = _env_int("RATE_LIMIT_REQUESTS_PER_MINUTE", 30)
@@ -58,6 +67,9 @@ def get_settings() -> Settings:
 
     max_tokens = _env_int("MAX_OUTPUT_TOKENS", 2048)
     max_tokens = max(1, max_tokens)
+
+    temp = _env_float("GEMINI_TEMPERATURE", 0.2)
+    temp = min(2.0, max(0.0, temp))
 
     return Settings(
         cors_allowed_origins=_env("CORS_ALLOWED_ORIGINS", ""),
@@ -70,6 +82,7 @@ def get_settings() -> Settings:
         # Vertex publisher models are not always available in every region. Many preview models are
         # served from the global location even when your app runs regionally.
         gemini_location=_env("GEMINI_LOCATION", ""),
+        gemini_temperature=temp,
         max_output_tokens=max_tokens,
         resume_bot_digest_email_to=_env("RESUME_BOT_DIGEST_EMAIL_TO", ""),
         resume_bot_digest_idle_minutes=idle,

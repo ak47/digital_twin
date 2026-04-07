@@ -12,6 +12,7 @@ Env (injected by Terraform / Cloud Run):
   GCS_SESSIONS_BUCKET     — session JSON blobs (optional; in-memory if unset)
   GCP_PROJECT_ID, GCP_REGION — Vertex Gemini
   GEMINI_MODEL            — optional, default gemini-2.5-flash (Vertex)
+  GEMINI_TEMPERATURE      — optional, default 0.2 (lower reduces invented detail)
   GET /                   — includes llm_model alongside service + docs (for About page)
   RATE_LIMIT_REQUESTS_PER_MINUTE — default 30
   SYSTEM_PROMPT_PATH      — override path to system.md
