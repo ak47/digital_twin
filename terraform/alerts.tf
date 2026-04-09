@@ -59,6 +59,18 @@ resource "google_logging_metric" "digest_job_errors" {
   ]
 }
 
+resource "time_sleep" "wait_for_logging_metrics" {
+  count = local.alerts_enabled ? 1 : 0
+
+  # Logging metrics can take several minutes to become queryable from Monitoring.
+  create_duration = "2m"
+
+  depends_on = [
+    google_logging_metric.api_errors,
+    google_logging_metric.digest_job_errors,
+  ]
+}
+
 # -----------------------------
 # Alert policies
 # -----------------------------
@@ -108,6 +120,7 @@ resource "google_monitoring_alert_policy" "api_errors" {
   depends_on = [
     google_logging_metric.api_errors,
     google_monitoring_notification_channel.email,
+    time_sleep.wait_for_logging_metrics,
   ]
 }
 
@@ -156,6 +169,7 @@ resource "google_monitoring_alert_policy" "digest_job_errors" {
   depends_on = [
     google_logging_metric.digest_job_errors,
     google_monitoring_notification_channel.email,
+    time_sleep.wait_for_logging_metrics,
   ]
 }
 
