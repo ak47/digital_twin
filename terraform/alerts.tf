@@ -103,8 +103,9 @@ resource "google_monitoring_alert_policy" "api_errors" {
     condition_threshold {
       # Log-based metrics can surface under multiple monitored resource types
       # (for example, "cloud_run_revision" and "global/unspecified"). Match on
-      # metric.type only so incidents fire regardless of resource labeling.
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.api_errors[0].name}\""
+      # metric.type and allow multiple resource.type values so incidents fire
+      # regardless of resource labeling.
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.api_errors[0].name}\" AND (resource.type=\"cloud_run_revision\" OR resource.type=\"global\")"
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -155,8 +156,9 @@ resource "google_monitoring_alert_policy" "digest_job_errors" {
     condition_threshold {
       # Log-based metrics can surface under multiple monitored resource types
       # (for example, "cloud_run_job" and "global/unspecified"). Match on
-      # metric.type only so incidents fire regardless of resource labeling.
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.digest_job_errors[0].name}\""
+      # metric.type and allow multiple resource.type values so incidents fire
+      # regardless of resource labeling.
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.digest_job_errors[0].name}\" AND (resource.type=\"cloud_run_job\" OR resource.type=\"global\")"
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
