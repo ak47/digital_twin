@@ -65,6 +65,12 @@ variable "cloud_run_custom_domain" {
   default     = ""
 }
 
+variable "alert_email" {
+  description = "Email address for Cloud Monitoring alert notifications (pass via TERRAFORM_TFVARS / TF_VAR_alert_email). Empty disables monitoring resources."
+  type        = string
+  default     = ""
+}
+
 variable "session_retention_days" {
   description = "GCS lifecycle: delete session JSON objects after N days."
   type        = number
