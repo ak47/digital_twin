@@ -98,29 +98,12 @@ resource "google_monitoring_alert_policy" "api_errors" {
     EOT
   }
 
+  # Per Monitoring metric descriptor, this log-based metric is only valid with
+  # monitored resource type cloud_run_revision.
   conditions {
-    display_name = "API errors (any in 5m) — cloud_run_revision"
+    display_name = "API errors (any in 5m)"
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.api_errors[0].name}\" AND resource.type=\"cloud_run_revision\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0
-      duration        = "0s"
-
-      aggregations {
-        alignment_period   = "300s"
-        per_series_aligner = "ALIGN_DELTA"
-      }
-
-      trigger {
-        count = 1
-      }
-    }
-  }
-
-  conditions {
-    display_name = "API errors (any in 5m) — global"
-    condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.api_errors[0].name}\" AND resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.api_errors[0].name}\" resource.type=\"cloud_run_revision\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -166,29 +149,12 @@ resource "google_monitoring_alert_policy" "digest_job_errors" {
     EOT
   }
 
+  # Per Monitoring metric descriptor, this log-based metric is only valid with
+  # monitored resource type cloud_run_job.
   conditions {
-    display_name = "Digest job errors (any in 15m) — cloud_run_job"
+    display_name = "Digest job errors (any in 15m)"
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.digest_job_errors[0].name}\" AND resource.type=\"cloud_run_job\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0
-      duration        = "0s"
-
-      aggregations {
-        alignment_period   = "900s"
-        per_series_aligner = "ALIGN_DELTA"
-      }
-
-      trigger {
-        count = 1
-      }
-    }
-  }
-
-  conditions {
-    display_name = "Digest job errors (any in 15m) — global"
-    condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.digest_job_errors[0].name}\" AND resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.digest_job_errors[0].name}\" resource.type=\"cloud_run_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
