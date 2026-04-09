@@ -15,6 +15,7 @@ The public widget and marketing site live on **GitHub Pages** ([ak47.github.io](
 | [terraform/README.md](terraform/README.md) | First-time GCP setup, Terraform apply, GitHub Actions secrets, custom domain, remote state |
 | [docs/session-digest.md](docs/session-digest.md) | Optional email transcript job (Workspace, Gmail API, Terraform variables) |
 | [docs/troubleshooting-gcp-auth.md](docs/troubleshooting-gcp-auth.md) | `invalid_grant` / ADC / Terraform provider auth |
+| [docs/observability.md](docs/observability.md) | Error monitoring + alerting (Cloud Logging, Error Reporting, Monitoring) |
 
 Product alignment notes (widget + Pages plan): [`ak47.github.io` / `docs/resume-bot-gcp-github-pages-plan.md`](https://github.com/ak47/ak47.github.io/blob/main/docs/resume-bot-gcp-github-pages-plan.md).
 

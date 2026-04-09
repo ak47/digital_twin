@@ -33,10 +33,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from digital_twin import llm, rate_limit, session_store
+from digital_twin.observability import report_exception, setup_logging
 from digital_twin.settings import get_settings
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+setup_logging(level=logging.INFO)
 
 SESSION_HEADER = "X-Session-Id"
 
@@ -171,6 +172,7 @@ async def chat_post(
             text = await asyncio.to_thread(run_model)
         except Exception as e:
             logger.exception("Model invocation failed: %s", e)
+            report_exception(e, context={"where": "chat_post.run_model"})
             text = f"(Temporary error: {e!s})"
 
         pieces.append(text)
@@ -189,6 +191,7 @@ async def chat_post(
             await asyncio.to_thread(persist)
         except Exception as e:
             logger.exception("Session save failed: %s", e)
+            report_exception(e, context={"where": "chat_post.persist_session"})
             yield f"data: {json.dumps({'warning': 'session not saved', 'detail': str(e)})}\n\n".encode()
 
         yield f"data: {json.dumps({'complete': True})}\n\n".encode()
