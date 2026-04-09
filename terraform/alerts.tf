@@ -22,9 +22,9 @@ resource "google_logging_metric" "api_errors" {
   ])
 
   metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
     display_name = "${var.name_prefix} API errors"
   }
 
@@ -48,9 +48,9 @@ resource "google_logging_metric" "digest_job_errors" {
   ])
 
   metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
     display_name = "${var.name_prefix} digest job errors"
   }
 
@@ -89,7 +89,7 @@ resource "google_monitoring_alert_policy" "api_errors" {
   conditions {
     display_name = "API errors (any in 5m)"
     condition_threshold {
-      filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.api_errors[0].name}\" resource.type=\"cloud_run_revision\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.api_errors[0].name}\" resource.type=\"cloud_run_revision\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -137,7 +137,7 @@ resource "google_monitoring_alert_policy" "digest_job_errors" {
   conditions {
     display_name = "Digest job errors (any in 15m)"
     condition_threshold {
-      filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.digest_job_errors[0].name}\" resource.type=\"cloud_run_job\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.digest_job_errors[0].name}\" resource.type=\"cloud_run_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
