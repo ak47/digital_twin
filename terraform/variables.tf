@@ -83,14 +83,20 @@ variable "bucket_force_destroy" {
   default     = false
 }
 
-variable "rag_engine_tier" {
-  description = "Vertex AI RAG managed DB tier: BASIC (cost-friendly) or SCALED (production)."
+variable "rag_engine_deployment_mode" {
+  description = <<-EOT
+    Vertex AI RAG Engine deployment mode for regional google_vertex_ai_rag_engine_config resources.
+    SPANNER_BASIC / SPANNER_SCALED provision dedicated Spanner (Terraform-managed). SERVERLESS omits
+    that resource entirely — switch the region to Serverless via Console or scripts/ingest_rag_corpus.py
+    (UpdateRagEngineConfig); Serverless is documented as us-central1-only (preview). Use with
+    rag_corpus_ingest_region = "" unless all RAG lives in var.region.
+  EOT
   type        = string
-  default     = "BASIC"
+  default     = "SPANNER_BASIC"
 
   validation {
-    condition     = contains(["BASIC", "SCALED"], var.rag_engine_tier)
-    error_message = "rag_engine_tier must be BASIC or SCALED."
+    condition     = contains(["SPANNER_BASIC", "SPANNER_SCALED", "SERVERLESS"], var.rag_engine_deployment_mode)
+    error_message = "rag_engine_deployment_mode must be SPANNER_BASIC, SPANNER_SCALED, or SERVERLESS."
   }
 }
 

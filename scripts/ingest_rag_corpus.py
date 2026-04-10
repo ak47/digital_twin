@@ -15,8 +15,10 @@ Example:
 Default --region is us-central1. If Google blocks RAG there, stderr describes a backup path
 (Terraform rag_corpus_ingest_region + ingest --region); see terraform/README.md → RAG backup.
 
-Before create_corpus, the script calls UpdateRagEngineConfig (Basic or Scaled from TF_VAR_rag_engine_tier,
-default BASIC) if the regional RAG Engine is still unprovisioned — same API Google’s error text refers to.
+Before create_corpus, the script calls UpdateRagEngineConfig if the regional RAG Engine is still
+unprovisioned (or not yet Serverless): Spanner tier from TF_VAR_rag_engine_deployment_mode
+(SPANNER_BASIC / SPANNER_SCALED, default) or Serverless from TF_VAR_rag_engine_deployment_mode=SERVERLESS
+(vertexai.preview.rag). Legacy: TF_VAR_rag_engine_tier=BASIC|SCALED maps to SPANNER_*.
 
 If rag.import_files fails with 500 after upload: terraform apply (RAG Engine + corpus bucket IAM);
 see terraform/README.md → RAG.
@@ -97,22 +99,72 @@ def _upload(
     return gs_uris
 
 
-def _desired_rag_managed_db_tier():
-    """Match Terraform default `rag_engine_tier` (variables.tf): BASIC unless TF_VAR_rag_engine_tier=SCALED."""
+def _rag_deployment_mode() -> str:
+    """Align with Terraform var rag_engine_deployment_mode (TF_VAR_rag_engine_deployment_mode)."""
+    raw = (
+        os.environ.get("TF_VAR_rag_engine_deployment_mode")
+        or os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE")
+        or ""
+    ).strip().upper()
+    if raw in ("SPANNER_BASIC", "SPANNER_SCALED", "SERVERLESS"):
+        return raw
+    # Legacy: removed Terraform var rag_engine_tier — still honor for local one-off runs.
+    legacy = (os.environ.get("TF_VAR_rag_engine_tier") or "BASIC").strip().upper()
+    if legacy == "SCALED":
+        return "SPANNER_SCALED"
+    return "SPANNER_BASIC"
+
+
+def _desired_spanner_tier():
+    """Spanner mode only: Basic vs Scaled."""
     from vertexai import rag
 
-    raw = (os.environ.get("TF_VAR_rag_engine_tier") or "BASIC").strip().upper()
-    if raw == "SCALED":
+    if _rag_deployment_mode() == "SPANNER_SCALED":
         return rag.Scaled(), "Scaled"
     return rag.Basic(), "Basic"
 
 
+def _ensure_vertex_rag_engine_serverless(project_id: str, region: str) -> None:
+    """PATCH RagEngineConfig to Serverless (Vertex AI preview API; documented us-central1-only)."""
+    from vertexai.preview import rag as pr
+
+    name = f"projects/{project_id}/locations/{region}/ragEngineConfig"
+    if region.strip() != "us-central1":
+        print(
+            f"Warning: Vertex RAG Serverless is documented as us-central1-only; using region {region!r}.",
+            file=sys.stderr,
+        )
+
+    try:
+        cfg = pr.get_rag_engine_config(name=name)
+        mdc = cfg.rag_managed_db_config
+        if mdc and mdc.mode is not None and isinstance(mdc.mode, pr.Serverless):
+            return
+    except (RuntimeError, ValueError, gcp_exceptions.NotFound):
+        pass
+
+    print(
+        f"Vertex RAG Engine in {region!r}: UpdateRagEngineConfig → Serverless (waits for LRO)…",
+        file=sys.stderr,
+    )
+    pr.update_rag_engine_config(
+        rag_engine_config=pr.RagEngineConfig(
+            name=name,
+            rag_managed_db_config=pr.RagManagedDbConfig(mode=pr.Serverless()),
+        ),
+    )
+
+
 def _ensure_vertex_rag_engine_ready(project_id: str, region: str) -> None:
-    """PATCH RagEngineConfig to Basic/Scaled when API still reports unprovisioned (common after create drift)."""
+    """PATCH RagEngineConfig: Serverless or Spanner Basic/Scaled when still inactive / wrong mode."""
+    if _rag_deployment_mode() == "SERVERLESS":
+        _ensure_vertex_rag_engine_serverless(project_id, region)
+        return
+
     from vertexai import rag
 
     name = f"projects/{project_id}/locations/{region}/ragEngineConfig"
-    tier_obj, tier_label = _desired_rag_managed_db_tier()
+    tier_obj, tier_label = _desired_spanner_tier()
 
     try:
         cfg = rag.get_rag_engine_config(name=name)
@@ -150,9 +202,16 @@ def main() -> None:
         "--region",
         default="us-central1",
         help=(
-            "Vertex location for RAG corpus create/import; must match a region where "
-            "google_vertex_ai_rag_engine_config exists (default: same as Terraform var.region)."
+            "Vertex location for RAG corpus create/import. For Spanner mode, Terraform must have "
+            "google_vertex_ai_rag_engine_config in this region. For SERVERLESS, use us-central1 "
+            "(documented region for Serverless RAG)."
         ),
+    )
+    parser.add_argument(
+        "--rag-engine-deployment-mode",
+        default="",
+        metavar="MODE",
+        help="Override TF_VAR_rag_engine_deployment_mode: SPANNER_BASIC, SPANNER_SCALED, or SERVERLESS.",
     )
     parser.add_argument(
         "--bucket",
@@ -205,6 +264,14 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+
+    mode_override = (args.rag_engine_deployment_mode or "").strip().upper()
+    if mode_override:
+        if mode_override not in ("SPANNER_BASIC", "SPANNER_SCALED", "SERVERLESS"):
+            raise SystemExit(
+                "--rag-engine-deployment-mode must be SPANNER_BASIC, SPANNER_SCALED, or SERVERLESS."
+            )
+        os.environ["RAG_ENGINE_DEPLOYMENT_MODE"] = mode_override
 
     if not args.project_id.strip():
         raise SystemExit("Set --project-id or GOOGLE_CLOUD_PROJECT or TF_VAR_project_id.")

@@ -9,8 +9,9 @@
 #
 # Optional overrides:
 # name_prefix            = "digital-twin"
-# rag_engine_tier        = "BASIC"
-# rag_corpus_ingest_region = "europe-west4"   # backup if RAG in var.region (us-central1) is allowlist-blocked
+# RAG Engine: SPANNER_BASIC (default) | SPANNER_SCALED | SERVERLESS (no Terraform RAG config resource; see README)
+# rag_engine_deployment_mode = "SERVERLESS"
+# rag_corpus_ingest_region = "europe-west4"   # backup if RAG in var.region is allowlist-blocked (must be "" if SERVERLESS)
 # session_retention_days = 3
 # cors_allowed_origins   = ["https://no-ego.net", "https://www.no-ego.net"]
 # cloud_run_custom_domain = "digital-twin.no-ego.net"   # optional; verify no-ego.net for GCP first

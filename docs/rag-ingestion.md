@@ -9,7 +9,11 @@ This runbook is for operators who need to **put new source documents into produc
 - **Ingest / import** — Calling Vertex **`import_files`** for one or more `gs://` URIs. Until you import, the bucket contents are **not** searchable by RAG.
 - **Re-import** — Uploading new blobs under `rag-sources/` and running import again **into the same corpus** refreshes indexed content. You do **not** need a new corpus name or a new `RAG_CORPUS_RESOURCE` for routine content updates.
 
-Terraform provisions the bucket, RAG Engine config (managed DB tier), and IAM for the Vertex service agent. It does **not** create the RagCorpus or run imports; that is done by **`scripts/ingest_rag_corpus.py`** or the console/API.
+Terraform provisions the bucket, IAM for the Vertex service agent, and (unless **`rag_engine_deployment_mode = "SERVERLESS"`**) the regional **RAG Engine** `google_vertex_ai_rag_engine_config` (Spanner tiers). It does **not** create the RagCorpus or run imports; that is done by **`scripts/ingest_rag_corpus.py`** or the console/API.
+
+## Serverless RAG (optional, us-central1)
+
+To avoid Terraform-managed **Cloud Spanner** for RAG, set **`rag_engine_deployment_mode = "SERVERLESS"`** and **`rag_corpus_ingest_region = ""`**. Run ingest with **`TF_VAR_rag_engine_deployment_mode=SERVERLESS`** or **`--rag-engine-deployment-mode SERVERLESS`** so **`ingest_rag_corpus.py`** applies **Serverless** via `vertexai.preview.rag` before **`create_corpus`**. Google documents Serverless as **preview** and **us-central1-only**; moving from Spanner in another region needs a **new** corpus in **`us-central1`** and an updated **`rag_corpus_resource_name`**. See [terraform/README.md](../terraform/README.md) → *Serverless RAG*.
 
 ## First-time: create corpus, upload, import
 
@@ -93,5 +97,5 @@ After a successful re-import, **Cloud Run does not need a new revision** for con
 ## Related
 
 - [architecture.md](architecture.md) — diagrams and component notes.
-- [terraform/README.md](../terraform/README.md) — bucket outputs, `rag_corpus_ingest_region`, `rag_engine_tier`.
+- [terraform/README.md](../terraform/README.md) — bucket outputs, `rag_corpus_ingest_region`, `rag_engine_deployment_mode` (Spanner vs Serverless).
 - `scripts/ingest_rag_corpus.py` — full CLI (`--import-result-sink`, retries, embedding model).

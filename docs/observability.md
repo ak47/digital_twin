@@ -100,6 +100,13 @@ The application uses:
 
 You’ll still see stack traces in logs via `logger.exception(...)`.
 
+## Billing (RAG / Spanner vs Serverless)
+
+After changing Vertex AI RAG deployment mode, use **Billing → Reports** (or **Cost table**) to confirm costs moved as expected:
+
+- **Spanner mode** (`rag_engine_deployment_mode` **SPANNER_BASIC** or **SPANNER_SCALED**): expect a **Cloud Spanner** line item for the RAG-managed instance while configs exist in those regions.
+- **Serverless mode** (`rag_engine_deployment_mode` **SERVERLESS**): Terraform does **not** create `google_vertex_ai_rag_engine_config`; Spanner charges for RAG should **stop** after the old regional configs are removed and the project uses [Serverless RAG](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/serverless-mode). You may still see **Vertex AI** / **Vector Search** usage for embeddings and retrieval — see [RAG Engine billing](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-engine-billing).
+
 ## How to test (suggested)
 
 - **API**: in a non-prod environment, deliberately trigger an exception path and confirm:

@@ -33,13 +33,21 @@ output "cloud_run_service_account" {
 }
 
 output "rag_engine_config_name" {
-  value       = google_vertex_ai_rag_engine_config.main[var.region].name
-  description = "RAG Engine config in var.region (primary regional plane for this stack)."
+  value = (
+    var.rag_engine_deployment_mode == "SERVERLESS"
+    ? "projects/${nonsensitive(var.project_id)}/locations/${var.region}/ragEngineConfig"
+    : nonsensitive(google_vertex_ai_rag_engine_config.main[var.region].name)
+  )
+  description = "RAG Engine singleton resource name in var.region. When SERVERLESS, this is the conventional name (config is not Terraform-managed)."
 }
 
 output "rag_engine_config_names_by_region" {
-  value       = { for r, cfg in google_vertex_ai_rag_engine_config.main : r => cfg.name }
-  description = "All provisioned RAG Engine configs (includes rag_corpus_ingest_region when set)."
+  value = (
+    var.rag_engine_deployment_mode == "SERVERLESS"
+    ? { (var.region) = "projects/${nonsensitive(var.project_id)}/locations/${var.region}/ragEngineConfig" }
+    : { for r, cfg in google_vertex_ai_rag_engine_config.main : r => nonsensitive(cfg.name) }
+  )
+  description = "All Terraform-managed RAG Engine configs, or the primary region name when SERVERLESS."
 }
 
 output "cors_allowed_origins" {
