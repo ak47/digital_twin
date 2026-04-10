@@ -38,7 +38,7 @@ If `alert_email` is empty, monitoring resources are skipped.
 
 ## Custom latency metrics (RAG + Gemini)
 
-The API writes custom Cloud Monitoring metrics (Cloud Run SA needs `roles/monitoring.metricWriter` from Terraform):
+The API writes custom Cloud Monitoring metrics (Cloud Run SA needs `roles/monitoring.metricWriter` from Terraform). Points use monitored resource type **`global`** (project id only). Cloud Run service/revision are **metric labels** (`cloud_run_service`, `cloud_run_revision`, `deploy_region`) because user-defined metrics **cannot** be written to `cloud_run_revision`.
 
 - `custom.googleapis.com/digital_twin/rag_retrieval_latency_ms`
 - `custom.googleapis.com/digital_twin/gemini_generate_latency_ms`
@@ -53,6 +53,29 @@ In **Metrics Explorer**, search for `custom.googleapis.com/digital_twin/`. Chart
 - `status`
 
 Local smoke: `pip install -e .`, `export GOOGLE_CLOUD_PROJECT=...`, optional `METRICS_DEBUG=1 python3 scripts/emit_test_metric.py`.
+
+### If metrics do not appear in Metrics Explorer
+
+1. **Confirm the write API succeeded** (not just “ok” printed):
+   - `METRICS_DEBUG=1 python3 scripts/emit_test_metric.py --verbose` — should log `metrics ok:` or a full exception.
+   - Exit code **2** means the Monitoring API rejected the write.
+
+2. **Correct GCP project in the console** — metrics land in the project passed to `create_time_series` (`GOOGLE_CLOUD_PROJECT` / metadata project id), not necessarily the org/folder you have selected elsewhere.
+
+3. **Wait 2–5 minutes** after the first successful point for a new `custom.googleapis.com/...` type to show up in the metric picker.
+
+4. **List metric descriptors** (after a successful write):
+
+   ```bash
+   gcloud monitoring metrics-descriptors list \
+     --project=YOUR_PROJECT_ID \
+     --filter='metric.type=starts_with("custom.googleapis.com/digital_twin/")' \
+     --format='table(type)'
+   ```
+
+5. **Production: rebuild and redeploy the image** so the container includes `google-cloud-monitoring` from `pyproject.toml`. An old image will import-fail and skip writes (use `METRICS_DEBUG=1` on the service to see errors in logs).
+
+6. **Production IAM**: Cloud Run uses its **service account**, not your user. Ensure Terraform applied `roles/monitoring.metricWriter` for that SA.
 
 ## App-level reporting behavior
 

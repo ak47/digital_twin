@@ -104,28 +104,19 @@ def default_context() -> MetricContext:
 
 
 def _monitored_resource(ctx: MetricContext) -> tuple[str, dict[str, str]]:
-    # Prefer Cloud Run monitored resource if we have the minimum labels; otherwise fall back.
-    if ctx.project_id and ctx.region and ctx.service and ctx.revision:
-        return (
-            "cloud_run_revision",
-            {
-                "project_id": ctx.project_id,
-                "location": ctx.region,
-                "service_name": ctx.service,
-                "revision_name": ctx.revision,
-                "configuration_name": os.environ.get("K_CONFIGURATION", "").strip() or ctx.service,
-            },
-        )
-    return (
-        "generic_task",
-        {
-            "project_id": ctx.project_id or "unknown",
-            "location": ctx.region or "unknown",
-            "namespace": ctx.service or "digital-twin-api",
-            "job": ctx.revision or "unknown",
-            "task_id": ctx.instance_id,
-        },
-    )
+    # User-defined (custom.googleapis.com) metrics cannot be written with resource type
+    # `cloud_run_revision`. Use `global` + project_id (see GCP "Creating metrics" → writable types).
+    return ("global", {"project_id": ctx.project_id})
+
+
+def _merge_runtime_metric_labels(labels: dict[str, str], ctx: MetricContext) -> None:
+    """Optional dimensions for slicing; keep cardinality bounded (revision is fine on Cloud Run)."""
+    if ctx.service:
+        labels.setdefault("cloud_run_service", _safe_label_value(ctx.service))
+    if ctx.revision:
+        labels.setdefault("cloud_run_revision", _safe_label_value(ctx.revision))
+    if ctx.region:
+        labels.setdefault("deploy_region", _safe_label_value(ctx.region))
 
 
 _SIZE_BINS: Final[list[int]] = [0, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072]
@@ -155,30 +146,46 @@ def record_latency_ms(
     *,
     labels: dict[str, str] | None = None,
     ctx: MetricContext | None = None,
-) -> None:
+) -> bool:
     """
     Write a single point to a custom Cloud Monitoring metric.
 
     This must never raise: failures should not impact request handling.
+    Returns True if the API call completed without exception.
     """
     if not _running_on_gcp():
-        return
+        if os.environ.get("METRICS_DEBUG"):
+            logger.warning(
+                "metrics skipped: set K_SERVICE (Cloud Run) or GOOGLE_CLOUD_PROJECT for local writes"
+            )
+        return False
 
     client = _ensure_client()
     if not client:
-        return
+        if os.environ.get("METRICS_DEBUG"):
+            logger.warning("metrics skipped: Monitoring client unavailable (import/credentials)")
+        return False
 
     try:
         from google.cloud import monitoring_v3  # type: ignore
         from google.protobuf import timestamp_pb2  # type: ignore
 
         ctx = ctx or default_context()
+        if not (ctx.project_id or "").strip():
+            if os.environ.get("METRICS_DEBUG"):
+                logger.warning(
+                    "metrics skipped: empty project id (set GOOGLE_CLOUD_PROJECT / GCP_PROJECT_ID "
+                    "or run on Cloud Run with metadata)"
+                )
+            return False
+
         rtype, rlabels = _monitored_resource(ctx)
 
         series = monitoring_v3.TimeSeries()
         series.metric.type = _metric_type(metric_name)
         for k, v in (labels or {}).items():
             series.metric.labels[k] = _safe_label_value(v)
+        _merge_runtime_metric_labels(series.metric.labels, ctx)
         series.resource.type = rtype
         for k, v in rlabels.items():
             series.resource.labels[k] = _safe_label_value(v, max_len=256)
@@ -194,8 +201,21 @@ def record_latency_ms(
 
         project_name = f"projects/{ctx.project_id}"
         client.create_time_series(name=project_name, time_series=[series])
+        if os.environ.get("METRICS_DEBUG"):
+            logger.info(
+                "metrics ok: %s %s ms resource=%s labels=%s",
+                series.metric.type,
+                ms,
+                rtype,
+                dict(series.metric.labels),
+            )
+        return True
     except Exception as e:
-        logger.debug("metrics write failed: %s", e)
+        if os.environ.get("METRICS_DEBUG"):
+            logger.warning("metrics write failed: %s", e, exc_info=True)
+        else:
+            logger.debug("metrics write failed: %s", e)
+        return False
 
 
 def sized_label(value: int) -> str:
