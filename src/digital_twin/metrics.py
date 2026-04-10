@@ -4,12 +4,15 @@ import logging
 import os
 import socket
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from typing import Final
 
 logger = logging.getLogger(__name__)
 
 _client = None
+_resolved_project_id: str | None = None
 
 
 def _running_on_gcp() -> bool:
@@ -17,7 +20,29 @@ def _running_on_gcp() -> bool:
 
 
 def _gcp_project_id() -> str:
-    return (os.environ.get("GCP_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT") or "").strip()
+    global _resolved_project_id
+    if _resolved_project_id is not None:
+        return _resolved_project_id
+    pid = (os.environ.get("GCP_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT") or "").strip()
+    if pid:
+        _resolved_project_id = pid
+        return pid
+    # Cloud Run sets K_SERVICE; metadata has project id even if deploy omitted env.
+    if os.environ.get("K_SERVICE", "").strip():
+        try:
+            req = urllib.request.Request(
+                "http://metadata.google.internal/computeMetadata/v1/project/project-id",
+                headers={"Metadata-Flavor": "Google"},
+            )
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                pid = resp.read().decode().strip()
+                if pid:
+                    _resolved_project_id = pid
+                    return pid
+        except (OSError, urllib.error.URLError) as e:
+            logger.debug("metrics metadata project-id lookup failed: %s", e)
+    _resolved_project_id = ""
+    return ""
 
 
 def _gcp_region() -> str:
