@@ -52,25 +52,39 @@ In **Metrics Explorer**, search for `custom.googleapis.com/digital_twin/`. Chart
 - `gemini_model`
 - `status`
 
-Local smoke: `pip install -e .`, `export GOOGLE_CLOUD_PROJECT=...`, optional `METRICS_DEBUG=1 python3 scripts/emit_test_metric.py`.
+Local smoke: `uv sync --extra dev`, `export GOOGLE_CLOUD_PROJECT=...`, optional `METRICS_DEBUG=1 uv run python scripts/emit_test_metric.py`.
 
 ### If metrics do not appear in Metrics Explorer
 
 1. **Confirm the write API succeeded** (not just “ok” printed):
-   - `METRICS_DEBUG=1 python3 scripts/emit_test_metric.py --verbose` — should log `metrics ok:` or a full exception.
+   - `METRICS_DEBUG=1 uv run python scripts/emit_test_metric.py --verbose` — should log `metrics ok:` or a full exception.
    - Exit code **2** means the Monitoring API rejected the write.
 
 2. **Correct GCP project in the console** — metrics land in the project passed to `create_time_series` (`GOOGLE_CLOUD_PROJECT` / metadata project id), not necessarily the org/folder you have selected elsewhere.
 
 3. **Wait 2–5 minutes** after the first successful point for a new `custom.googleapis.com/...` type to show up in the metric picker.
 
-4. **List metric descriptors** (after a successful write):
+4. **List metric descriptors** (after a successful write). There is often **no GA `gcloud monitoring metrics-descriptors`** command; use the API instead:
 
    ```bash
-   gcloud monitoring metrics-descriptors list \
-     --project=YOUR_PROJECT_ID \
-     --filter='metric.type=starts_with("custom.googleapis.com/digital_twin/")' \
-     --format='table(type)'
+   # Python (needs: uv sync — includes google-cloud-monitoring; ADC)
+   uv run python - <<'PY'
+   from google.cloud import monitoring_v3
+   client = monitoring_v3.MetricServiceClient()
+   project = "projects/YOUR_PROJECT_ID"
+   prefix = "custom.googleapis.com/digital_twin/"
+   for d in client.list_metric_descriptors(name=project):
+       if d.type.startswith(prefix):
+           print(d.type)
+   PY
+   ```
+
+   ```bash
+   # curl + jq (paginate with nextPageToken if needed)
+   PROJECT_ID="YOUR_PROJECT_ID"
+   curl -sS -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+     "https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}/metricDescriptors" \
+     | jq -r '.metricDescriptors[]?.type | select(startswith("custom.googleapis.com/digital_twin/"))'
    ```
 
 5. **Production: rebuild and redeploy the image** so the container includes `google-cloud-monitoring` from `pyproject.toml`. An old image will import-fail and skip writes (use `METRICS_DEBUG=1` on the service to see errors in logs).

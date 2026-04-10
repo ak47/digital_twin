@@ -42,7 +42,7 @@ flowchart TB
     Dev --> CR
     DeployWF --> AR
     DeployWF --> CR
-    IngestWF -->|"WIF; terraform init/output;\npip -e .; ingest_rag_corpus.py"| Corpus
+    IngestWF -->|"WIF; terraform init/output;\nuv sync; ingest_rag_corpus.py"| Corpus
     TfWF -.->|"WIF; plan/apply\nremote state"| GCS_C
     RagSrc -->|"local ingest or\ngsutil cp → bucket"| GCS_C
     GCS_C -->|"import_files"| Corpus
@@ -117,11 +117,11 @@ flowchart LR
 ```
 
 - **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Same **secrets** as Deploy API; **`terraform init`** / **`terraform output`** supply **`corpus_bucket_name`** and **`rag_corpus_resource_name`** (set **`gha_terraform_state_bucket`** + apply for state-bucket IAM). Then **`ingest_rag_corpus.py`** with **`--skip-upload`** imports the **entire** `gs://<bucket>/rag-sources/` prefix; **`--files`** only satisfies the CLI (see **[rag-ingestion.md](rag-ingestion.md)**).
-- **Local full ingest**: **`pip install -e .`**, ADC (`gcloud auth application-default login`), then **`scripts/ingest_rag_corpus.py`** (can create corpus, upload, import, and optionally ensure RAG engine tier — see script docstring).
+- **Local full ingest**: **`uv sync`**, ADC (`gcloud auth application-default login`), then **`uv run python scripts/ingest_rag_corpus.py`** (can create corpus, upload, import, and optionally ensure RAG engine tier — see script docstring).
 
 ## Idle session digest (email)
 
-Implemented in **`session_digest.py`** (`scan_and_send_idle_digests`). **Production** runs it from **`python -m digital_twin.run_session_digest`** inside a **Cloud Run Job** on a **Scheduler** cadence (see **`terraform/digest_job.tf`**). The API does not start a background task.
+Implemented in **`session_digest.py`** (`scan_and_send_idle_digests`). **Production** runs it from **`uv run python -m digital_twin.run_session_digest`** inside a **Cloud Run Job** on a **Scheduler** cadence (see **`terraform/digest_job.tf`**). The API does not start a background task.
 
 ```mermaid
 flowchart TB

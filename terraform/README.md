@@ -165,11 +165,11 @@ Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.reg
 2. **One-shot (upload + create corpus + import)** from the **repo root**, with local files (paths are examples):
 
    ```bash
-   pip install -e .
+   uv sync
    gcloud auth application-default login
    export GOOGLE_CLOUD_PROJECT="YOUR_PROJECT_ID"   # or --project-id
 
-   python3 scripts/ingest_rag_corpus.py \
+   uv run python scripts/ingest_rag_corpus.py \
      --project-id YOUR_PROJECT_ID \
      --files ./knowledge.txt ./Profile.pdf
    ```
@@ -190,7 +190,7 @@ Google may block **RAG Engine** in `us-central1` for new projects until allowlis
 **Unprovisioned RAG Engine:** `scripts/ingest_rag_corpus.py` calls **`UpdateRagEngineConfig`** (Basic or Scaled, from **`TF_VAR_rag_engine_tier`**, default BASIC) before **`create_corpus`** when the regional tier is still inactive — no manual `-replace` step.
 
 **Re-import into the same corpus** (after upload to `rag-sources/`): with **`--skip-upload`**, the script imports the **whole** `gs://<bucket>/rag-sources/` prefix; pass any **`--files`** value to satisfy the CLI (the workflow uses a placeholder). Example:  
-`python3 scripts/ingest_rag_corpus.py --project-id … --corpus-resource-name 'projects/…/ragCorpora/…' --skip-upload --files .`  
+`uv run python scripts/ingest_rag_corpus.py --project-id … --corpus-resource-name 'projects/…/ragCorpora/…' --skip-upload --files .`  
 Or use GitHub Actions **Ingest RAG corpus** (see **`.github/workflows/ingest-rag-corpus.yml`**): it runs **`terraform init`** / **`terraform output`** for **`corpus_bucket_name`** and **`rag_corpus_resource_name`** so bucket + corpus stay aligned with **`terraform.tfvars`** / Cloud Run — set **`gha_terraform_state_bucket`** (same name as **`backend.tf`**) and **`terraform apply`** so the deploy SA can read state (**`github_deploy_terraform_state_viewer`**). Repository **Secrets** **`GCP_PROJECT_ID`**, **`GCP_SERVICE_ACCOUNT_EMAIL`**, and **`GCP_WORKLOAD_IDENTITY_PROVIDER`** must refer to the **same** project as the corpus (use **`terraform output -raw github_actions_deployer_email`** and **`project_id_for_github`**). Terraform also grants **`roles/aiplatform.user`** and corpus-bucket **`roles/storage.objectViewer`** (**`github_deploy_vertex_user`**, **`corpus_github_deploy_object_viewer`**). If **`aiplatform.ragFiles.import` denied**, fix secrets or IAM on the token’s SA.
 
 3. **Wire Cloud Run** with the printed resource name:
@@ -221,7 +221,7 @@ terraform apply -var="container_image=us-central1-docker.pkg.dev/YOUR_PROJECT_ID
 
 ### Idle session digest (Cloud Run Job + Scheduler)
 
-**`terraform/digest_job.tf`** provisions an optional **`${name_prefix}-session-digest`** Cloud Run Job and a **Cloud Scheduler** HTTP target that calls **`:run`** on that job. The job uses the same **`container_image`** as the API and runs **`python -m digital_twin.run_session_digest`**.
+**`terraform/digest_job.tf`** provisions an optional **`${name_prefix}-session-digest`** Cloud Run Job and a **Cloud Scheduler** HTTP target that calls **`:run`** on that job. The job uses the same **`container_image`** as the API and runs **`uv run python -m digital_twin.run_session_digest`**.
 
 In **`terraform.tfvars`** (or `TF_VAR_*`):
 

@@ -1,14 +1,14 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """
 Upload local files to the Terraform corpus GCS bucket, create a Vertex RAG corpus,
 import those objects, then print the resource name for Cloud Run.
 
-Requires: pip install -e .  (google-cloud-aiplatform, google-cloud-storage)
+Requires: uv sync (or uv sync --extra dev) — google-cloud-aiplatform, google-cloud-storage
 Auth: gcloud auth application-default login
 
 Example:
   cd /path/to/digital_twin
-  python3 scripts/ingest_rag_corpus.py \\
+  uv run python scripts/ingest_rag_corpus.py \\
     --project-id digital-twin-492318 \\
     --files ./knowledge.txt ./Profile.pdf
 
@@ -272,7 +272,7 @@ def main() -> None:
                 "Backup plan (corpus + retrieval in another supported region; API/Gemini stay us-central1):\n"
                 f"  1) In terraform.tfvars: rag_corpus_ingest_region = \"{BACKUP_RAG_REGION}\"\n"
                 "  2) cd terraform && terraform apply\n"
-                f"  3) python3 scripts/ingest_rag_corpus.py --project-id YOUR_ID "
+                f"  3) uv run python scripts/ingest_rag_corpus.py --project-id YOUR_ID "
                 f'--region {BACKUP_RAG_REGION} --files "./rag-sources/knowledge.txt" "./rag-sources/Profile.pdf"\n'
                 "  4) Set rag_corpus_resource_name (Terraform) and RAG_CORPUS_RESOURCE (GitHub) to the "
                 "printed resource name, then terraform apply / deploy.\n"

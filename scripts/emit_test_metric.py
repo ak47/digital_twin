@@ -1,12 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """
 Emit a single custom metric point to Cloud Monitoring.
 
 Example (local ADC; must set project id — metadata is not available on a laptop):
 
-  pip install -e .
+  uv sync --extra dev
   export GOOGLE_CLOUD_PROJECT="digital-twin-492318"
-  METRICS_DEBUG=1 python3 scripts/emit_test_metric.py --verbose
+  METRICS_DEBUG=1 uv run python scripts/emit_test_metric.py --verbose
 
 On Cloud Run, project id can come from metadata if env is omitted.
 """

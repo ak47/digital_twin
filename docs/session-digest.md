@@ -41,5 +41,5 @@ export GMAIL_SERVICE_ACCOUNT_KEY_FILE=/path/to/sa.json
 export GMAIL_DELEGATED_USER='resume-bot@no-ego.net'
 export RESUME_BOT_DIGEST_EMAIL_TO='you@example.com'
 export GCS_SESSIONS_BUCKET='your-sessions-bucket'
-python -m digital_twin.run_session_digest
+uv run python -m digital_twin.run_session_digest
 ```

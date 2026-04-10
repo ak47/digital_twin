@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # After: cd terraform && terraform apply
 # Prints values for GitHub → Settings → Secrets and variables → Actions.
+# Requires [uv](https://docs.astral.sh/uv/) for JSON parsing (run from repo root: uv sync --extra dev).
 set -euo pipefail
-cd "$(dirname "$0")/../terraform"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}/terraform"
 
 if [ -z "$(terraform state list 2>/dev/null || true)" ]; then
   echo "No Terraform state (nothing applied yet, or init/backend failed). Run:" >&2
@@ -41,7 +44,7 @@ echo ""
 echo "=== Optional: idle digest job (Terraform digest_job.tf + README) ==="
 digest_job=""
 if dj_json="$(terraform output -json session_digest_job_name 2>/dev/null)"; then
-  digest_job="$(printf '%s' "${dj_json}" | python3 -c "import json,sys; v=json.load(sys.stdin); print('' if v is None else str(v))")"
+  digest_job="$(printf '%s' "${dj_json}" | (cd "${REPO_ROOT}" && uv run python -c "import json,sys; v=json.load(sys.stdin); print('' if v is None else str(v))"))"
 fi
 if [ -n "${digest_job}" ]; then
   echo "GitHub Actions Variable: SESSION_DIGEST_JOB_NAME (deploy-api.yml updates this job's image)"

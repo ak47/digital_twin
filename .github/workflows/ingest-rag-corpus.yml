@@ -56,18 +56,22 @@ jobs:
           terraform_version: "1.9.8"
           terraform_wrapper: false
 
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install -e .
+        run: uv sync --frozen
 
       - name: Verify WIF credential targets GCP_SERVICE_ACCOUNT_EMAIL
         env:
           EXPECTED_SA: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
         run: |
-          python3 - <<'PY'
+          uv run python - <<'PY'
           import json
           import os
           import re
@@ -149,7 +153,7 @@ jobs:
           echo "Corpus bucket (from Terraform state): ${BUCKET}"
           echo "RagCorpus (from Terraform state, same as Cloud Run when TF-managed): ${CORPUS}"
           # --region is only used if the corpus name lacks /locations/REGION/ (it should not).
-          python scripts/ingest_rag_corpus.py \
+          uv run python scripts/ingest_rag_corpus.py \
             --project-id "${PROJECT_ID}" \
             --region "us-central1" \
             --bucket "${BUCKET}" \

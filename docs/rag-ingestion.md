@@ -16,11 +16,11 @@ Terraform provisions the bucket, RAG Engine config (managed DB tier), and IAM fo
 From the **repository root**, with Application Default Credentials:
 
 ```bash
-pip install -e .
+uv sync
 gcloud auth application-default login
 export GOOGLE_CLOUD_PROJECT="YOUR_PROJECT_ID"
 
-python3 scripts/ingest_rag_corpus.py \
+uv run python scripts/ingest_rag_corpus.py \
   --project-id YOUR_PROJECT_ID \
   --files ./path/to/knowledge.txt ./path/to/Profile.pdf
 ```
@@ -62,10 +62,10 @@ The workflow runs `terraform init` / `terraform output`, then `ingest_rag_corpus
 **Option B — Local**
 
 ```bash
-pip install -e .
+uv sync
 gcloud auth application-default login
 
-python3 scripts/ingest_rag_corpus.py \
+uv run python scripts/ingest_rag_corpus.py \
   --project-id YOUR_PROJECT_ID \
   --region REGION_MATCHING_CORPUS \
   --bucket YOUR_CORPUS_BUCKET \

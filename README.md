@@ -24,16 +24,20 @@ Product alignment notes (widget + Pages plan): [`ak47.github.io` / `docs/resume-
 Vertex does **not** watch the bucket automatically. After content is in **GCS**, you run an **import** into the existing **RagCorpus** (same `RAG_CORPUS_RESOURCE`).
 
 1. **Upload** new or changed files under `gs://<corpus-bucket>/rag-sources/` (for example with `gcloud storage cp` or any GCS client). Bucket name: `terraform output -raw corpus_bucket_name` from `terraform/`.
-2. **Ingest** — either run the GitHub Action **“Ingest RAG corpus”** (manual dispatch) or locally `python scripts/ingest_rag_corpus.py … --skip-upload` so Vertex re-imports the **`rag-sources/`** prefix into the corpus already wired to Cloud Run.
+2. **Ingest** — either run the GitHub Action **“Ingest RAG corpus”** (manual dispatch) or locally `uv run python scripts/ingest_rag_corpus.py … --skip-upload` so Vertex re-imports the **`rag-sources/`** prefix into the corpus already wired to Cloud Run.
 3. **No API redeploy** is required for content-only updates if `RAG_CORPUS_RESOURCE` is already set; retrieval uses the same corpus resource name.
 
 Full prerequisites (WIF, Actions variables, regions, first-time corpus creation) are in **[docs/rag-ingestion.md](docs/rag-ingestion.md)**.
 
+## Python toolchain
+
+Use **[uv](https://docs.astral.sh/uv/)** for environments and commands (`uv sync`, `uv run python`, `uv run pytest`). Commit **`uv.lock`** is the source of truth for CI and Docker builds.
+
 ## Quick start (local)
 
 ```bash
-pip install ".[dev]"
-pytest -q
+uv sync --extra dev
+uv run pytest -q
 ```
 
 Run the API locally with variables from [`.env.example`](.env.example). Terraform does **not** read `.env`; use `TF_VAR_project_id` or `terraform/terraform.tfvars` for infrastructure (see [terraform/README.md](terraform/README.md)).

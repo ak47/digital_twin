@@ -10,6 +10,7 @@ on:
       - "src/**"
       - "Dockerfile"
       - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
 
@@ -34,20 +35,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          cache: "pip"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
       - name: Run tests
-        run: |
-          pytest -q tests
+        run: uv run pytest -q tests
 
       # google-github-actions/auth requires a non-empty workload_identity_provider.
       # If any of these are unset, the action fails opaquely — fail here with a clear message.
