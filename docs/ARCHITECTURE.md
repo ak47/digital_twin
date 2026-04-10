@@ -18,7 +18,7 @@ flowchart TB
         GCS_C["GCS: corpus bucket\ncurated files\n(e.g. rag-sources/)"]
         Vertex["Vertex AI\nGemini\n(google-genai)"]
         subgraph vertex_rag["Vertex RAG Engine"]
-            RAGCfg["RAG engine config\nper region\n(BASIC default)"]
+            RAGCfg["RAG engine config\nper region\n(Spanner tiers or\nSERVERLESS via API)"]
             Corpus["RagCorpus\n(imported GCS URIs)"]
         end
         SM["Secret Manager\noptional: SA JSON\nfor Gmail digest"]
@@ -46,7 +46,7 @@ flowchart TB
     TfWF -.->|"WIF; plan/apply\nremote state"| GCS_C
     RagSrc -->|"local ingest or\ngsutil cp → bucket"| GCS_C
     GCS_C -->|"import_files"| Corpus
-    RAGCfg -.->|"provisions DB tier"| Corpus
+    RAGCfg -.->|"Spanner: TF tier;\nServerless: ingest"| Corpus
     CR -->|generate_content_stream\nGCP_REGION| Vertex
     CR -->|retrieval_query\nregion from corpus resource name| Corpus
     CR -->|read/write when bucket set| GCS_S
@@ -117,7 +117,7 @@ flowchart LR
 ```
 
 - **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Same **secrets** as Deploy API; **`terraform init`** / **`terraform output`** supply **`corpus_bucket_name`** and **`rag_corpus_resource_name`** (set **`gha_terraform_state_bucket`** + apply for state-bucket IAM). Then **`ingest_rag_corpus.py`** with **`--skip-upload`** imports the **entire** `gs://<bucket>/rag-sources/` prefix; **`--files`** only satisfies the CLI (see **[rag-ingestion.md](rag-ingestion.md)**).
-- **Local full ingest**: **`uv sync`**, ADC (`gcloud auth application-default login`), then **`uv run python scripts/ingest_rag_corpus.py`** (can create corpus, upload, import, and optionally ensure RAG engine tier — see script docstring).
+- **Local full ingest**: **`uv sync`**, ADC (`gcloud auth application-default login`), then **`uv run python scripts/ingest_rag_corpus.py`** (can create corpus, upload, import, and ensure RAG engine Spanner tier or Serverless when needed — see script docstring).
 
 ## Idle session digest (email)
 

@@ -69,7 +69,7 @@ Curated **RAG source files** are typically kept in-repo (for example under a fol
 | Area | Notes |
 |------|--------|
 | GCS | Corpus bucket (RAG sources under `rag-sources/`) and sessions bucket (optional lifecycle) |
-| Vertex | RAG Engine config (tier via `rag_engine_tier`), Gemini/RAG APIs enabled |
+| Vertex | RAG Engine mode via `rag_engine_deployment_mode` (Spanner tiers or SERVERLESS), Gemini/RAG APIs enabled |
 | Cloud Run | API service; optional session-digest **job** + **Scheduler** |
 | IAM | Runtime service account, bucket access, `aiplatform.user`, GitHub WIF |
 

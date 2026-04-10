@@ -154,7 +154,7 @@ An old pool id may exist in GCP but not in Terraform state. This stack now uses 
 
 End-to-end operator flow (production updates, CI ingest): **[`docs/rag-ingestion.md`](../docs/rag-ingestion.md)**.
 
-Terraform creates the **corpus GCS bucket**, **RAG engine config** in **`var.region`** (default `us-central1`), provisions the **Vertex AI service identity** for `aiplatform.googleapis.com`, then grants that principal **`storage.objectViewer`** on the corpus bucket. Optional **`rag_corpus_ingest_region`** adds a second RAG Engine region for non-default ingest layouts. You still **upload files** and **create a RAG corpus + import** (Vertex does not auto-read the bucket).
+Terraform creates the **corpus GCS bucket**, provisions the **Vertex AI service identity** for `aiplatform.googleapis.com`, then grants that principal **`storage.objectViewer`** on the corpus bucket. Unless **`rag_engine_deployment_mode = "SERVERLESS"`**, it also creates **`google_vertex_ai_rag_engine_config`** in **`var.region`** (and in **`rag_corpus_ingest_region`** when set) with **SPANNER_BASIC** or **SPANNER_SCALED**. Optional **`rag_corpus_ingest_region`** adds a second RAG Engine region for non-default ingest layouts (**must be empty when SERVERLESS**). You still **upload files** and **create a RAG corpus + import** (Vertex does not auto-read the bucket).
 
 1. **Bucket name** (after `terraform apply`):
 
@@ -187,7 +187,13 @@ Google may block **RAG Engine** in `us-central1` for new projects until allowlis
 3. Ingest with **`--region europe-west4`** (same as `ingest_rag_corpus.py` / stderr instructions)
 4. Set **`rag_corpus_resource_name`** / **`RAG_CORPUS_RESOURCE`** to the printed name (it will contain `locations/europe-west4/`). **`rag_vertex.py`** initializes Vertex in that location for retrieval only.
 
-**Unprovisioned RAG Engine:** `scripts/ingest_rag_corpus.py` calls **`UpdateRagEngineConfig`** (Basic or Scaled, from **`TF_VAR_rag_engine_tier`**, default BASIC) before **`create_corpus`** when the regional tier is still inactive — no manual `-replace` step.
+**Inactive RAG Engine:** `scripts/ingest_rag_corpus.py` calls **`UpdateRagEngineConfig`** before **`create_corpus`** when needed: **Spanner** Basic/Scaled from **`TF_VAR_rag_engine_deployment_mode`** (**SPANNER_BASIC** default, **SPANNER_SCALED**) or **Serverless** from **`TF_VAR_rag_engine_deployment_mode=SERVERLESS`**. Legacy: **`TF_VAR_rag_engine_tier`** (BASIC/SCALED) still maps to **SPANNER_*** for local one-offs.
+
+#### Serverless RAG (preview, `us-central1`)
+
+- Set **`rag_engine_deployment_mode = "SERVERLESS"`** and **`rag_corpus_ingest_region = ""`**. Terraform **omits** `google_vertex_ai_rag_engine_config` (the HashiCorp **google** provider does not expose Serverless on that resource as of v7.27).
+- **Migrate from Spanner** (e.g. corpus in `europe-west4`): (1) Switch **`us-central1`** to Serverless in the [Vertex console](https://console.cloud.google.com/vertex-ai/rag/corpus) or run **`ingest_rag_corpus.py`** with **`TF_VAR_rag_engine_deployment_mode=SERVERLESS`** before creating a **new** corpus; (2) **`terraform apply`** to drop extra regional configs if you clear **`rag_corpus_ingest_region`**; (3) **Re-ingest** `rag-sources/` into a new **`locations/us-central1/...`** corpus and set **`rag_corpus_resource_name`**. Corpora are **not** shared between Spanner and Serverless [deployment modes](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/deployment-modes).
+- If **`terraform plan`** shows **destroy** of `google_vertex_ai_rag_engine_config` when switching to SERVERLESS, review impact. To **stop Terraform from deleting** a live config you still need in GCP, **`terraform state rm`** those instances first, then apply — see [Terraform state](https://developer.hashicorp.com/terraform/cli/commands/state/rm) and Google’s [switching modes](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/switching-modes) docs.
 
 **Re-import into the same corpus** (after upload to `rag-sources/`): with **`--skip-upload`**, the script imports the **whole** `gs://<bucket>/rag-sources/` prefix; pass any **`--files`** value to satisfy the CLI (the workflow uses a placeholder). Example:  
 `uv run python scripts/ingest_rag_corpus.py --project-id … --corpus-resource-name 'projects/…/ragCorpora/…' --skip-upload --files .`  
