@@ -35,8 +35,8 @@ output "cloud_run_service_account" {
 output "rag_engine_config_name" {
   value = (
     var.rag_engine_deployment_mode == "SERVERLESS"
-    ? "projects/${var.project_id}/locations/${var.region}/ragEngineConfig"
-    : google_vertex_ai_rag_engine_config.main[var.region].name
+    ? "projects/${nonsensitive(var.project_id)}/locations/${var.region}/ragEngineConfig"
+    : nonsensitive(google_vertex_ai_rag_engine_config.main[var.region].name)
   )
   description = "RAG Engine singleton resource name in var.region. When SERVERLESS, this is the conventional name (config is not Terraform-managed)."
 }
@@ -44,8 +44,8 @@ output "rag_engine_config_name" {
 output "rag_engine_config_names_by_region" {
   value = (
     var.rag_engine_deployment_mode == "SERVERLESS"
-    ? { (var.region) = "projects/${var.project_id}/locations/${var.region}/ragEngineConfig" }
-    : { for r, cfg in google_vertex_ai_rag_engine_config.main : r => cfg.name }
+    ? { (var.region) = "projects/${nonsensitive(var.project_id)}/locations/${var.region}/ragEngineConfig" }
+    : { for r, cfg in google_vertex_ai_rag_engine_config.main : r => nonsensitive(cfg.name) }
   )
   description = "All Terraform-managed RAG Engine configs, or the primary region name when SERVERLESS."
 }
