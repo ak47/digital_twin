@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from digital_twin import rag_vertex
+from digital_twin.metrics import record_latency_ms, sized_label
 from digital_twin.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -111,6 +113,10 @@ def stream_reply(
         rag_block = rag_block or _RAG_EMPTY_RETRIEVAL_BLOCK
         system = f"{system}\n\n---\n\n{rag_block}"
 
+    gen_start = time.perf_counter()
+    status = "ok"
+    out_chars = 0
+
     try:
         from google import genai
         from google.genai import types
@@ -153,7 +159,37 @@ def stream_reply(
         for chunk in stream:
             t = getattr(chunk, "text", None)
             if t:
+                out_chars += len(t)
                 yield t
     except Exception as e:
+        status = "error"
         logger.exception("generate_content_stream failed: %s", e)
         yield f"(Generation error: {e!s})"
+    finally:
+        try:
+            record_latency_ms(
+                "gemini_generate_latency_ms",
+                (time.perf_counter() - gen_start) * 1000.0,
+                labels={
+                    "rag_mode": (
+                        "serverless"
+                        if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
+                        == "SERVERLESS"
+                        else "spanner"
+                        if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper().startswith("SPANNER")
+                        else "unknown"
+                    ),
+                    "rag_location": (
+                        rag_vertex._vertex_location_for_corpus(corpus, s.gcp_region)  # noqa: SLF001
+                        if corpus
+                        else "disabled"
+                    ),
+                    "gemini_location": (s.gemini_location or ("global" if "-preview" in s.gemini_model else s.gcp_region)) or "unknown",
+                    "gemini_model": s.gemini_model or "unknown",
+                    "rag_top_k": str(int(os.environ.get("RAG_TOP_K", "8"))),
+                    "status": status,
+                    "output_chars": sized_label(out_chars),
+                },
+            )
+        except Exception:
+            pass

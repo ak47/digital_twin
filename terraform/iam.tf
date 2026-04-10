@@ -12,7 +12,6 @@ resource "google_storage_bucket_iam_member" "corpus_vertex_service_agent" {
 
   depends_on = [
     google_project_service_identity.vertex_ai,
-    google_vertex_ai_rag_engine_config.main,
   ]
 }
 
@@ -33,5 +32,12 @@ resource "google_storage_bucket_iam_member" "sessions_admin" {
 resource "google_project_iam_member" "vertex_user" {
   project = var.project_id
   role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.cloud_run_api.email}"
+}
+
+# Cloud Monitoring: write custom metrics (RAG/Gemini latency).
+resource "google_project_iam_member" "monitoring_metric_writer" {
+  project = var.project_id
+  role    = "roles/monitoring.metricWriter"
   member  = "serviceAccount:${google_service_account.cloud_run_api.email}"
 }
