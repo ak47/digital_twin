@@ -182,6 +182,14 @@ async def chat_post(
             text = f"(Temporary error: {e!s})"
         finally:
             try:
+                mode_raw = (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
+                rag_mode = (
+                    "serverless"
+                    if mode_raw == "SERVERLESS"
+                    else "spanner"
+                    if mode_raw.startswith("SPANNER")
+                    else "unknown"
+                )
                 record_latency_ms(
                     "chat_model_latency_ms",
                     (time.perf_counter() - model_start) * 1000.0,
@@ -190,14 +198,7 @@ async def chat_post(
                         "gemini_model": (os.environ.get("GEMINI_MODEL") or "").strip() or "unknown",
                         "gemini_location": (os.environ.get("GEMINI_LOCATION") or os.environ.get("GCP_REGION") or "").strip()
                         or "unknown",
-                        "rag_mode": (
-                            "serverless"
-                            if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
-                            == "SERVERLESS"
-                            else "spanner"
-                            if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper().startswith("SPANNER")
-                            else "unknown"
-                        ),
+                        "rag_mode": rag_mode,
                     },
                 )
             except Exception:
@@ -223,20 +224,21 @@ async def chat_post(
             yield f"data: {json.dumps({'warning': 'session not saved', 'detail': str(e)})}\n\n".encode()
 
         try:
+            mode_raw = (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
+            rag_mode = (
+                "serverless"
+                if mode_raw == "SERVERLESS"
+                else "spanner"
+                if mode_raw.startswith("SPANNER")
+                else "unknown"
+            )
             record_latency_ms(
                 "chat_total_latency_ms",
                 (time.perf_counter() - total_start) * 1000.0,
                 labels={
                     "status": "ok" if model_status == "ok" else "error",
                     "gemini_model": (os.environ.get("GEMINI_MODEL") or "").strip() or "unknown",
-                    "rag_mode": (
-                        "serverless"
-                        if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
-                        == "SERVERLESS"
-                        else "spanner"
-                        if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper().startswith("SPANNER")
-                        else "unknown"
-                    ),
+                    "rag_mode": rag_mode,
                     "output_chars": sized_label(len(assistant_msg)),
                 },
             )

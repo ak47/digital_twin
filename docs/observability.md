@@ -38,19 +38,21 @@ If `alert_email` is empty, monitoring resources are skipped.
 
 ## Custom latency metrics (RAG + Gemini)
 
-The API writes custom Cloud Monitoring metrics (requires Cloud Run SA IAM `roles/monitoring.metricWriter`):
+The API writes custom Cloud Monitoring metrics (Cloud Run SA needs `roles/monitoring.metricWriter` from Terraform):
 
 - `custom.googleapis.com/digital_twin/rag_retrieval_latency_ms`
 - `custom.googleapis.com/digital_twin/gemini_generate_latency_ms`
 - `custom.googleapis.com/digital_twin/chat_model_latency_ms`
 - `custom.googleapis.com/digital_twin/chat_total_latency_ms`
 
-In **Metrics Explorer**, search for `custom.googleapis.com/digital_twin/` and chart **P50/P95** by labels such as:
+In **Metrics Explorer**, search for `custom.googleapis.com/digital_twin/`. Chart **P50/P95** and group/breakdown by labels like:
 
-- `rag_mode` (spanner/serverless/unknown)
+- `rag_mode` (spanner/serverless/unknown). Set **`RAG_ENGINE_DEPLOYMENT_MODE`** on the service (`SPANNER_BASIC`, `SPANNER_SCALED`, or `SERVERLESS`) so comparisons are meaningful.
 - `rag_location`
 - `gemini_model`
 - `status`
+
+Local smoke: `pip install -e .`, `export GOOGLE_CLOUD_PROJECT=...`, optional `METRICS_DEBUG=1 python3 scripts/emit_test_metric.py`.
 
 ## App-level reporting behavior
 

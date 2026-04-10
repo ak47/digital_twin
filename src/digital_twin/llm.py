@@ -167,24 +167,25 @@ def stream_reply(
         yield f"(Generation error: {e!s})"
     finally:
         try:
+            mode_raw = (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
+            rag_mode = (
+                "serverless"
+                if mode_raw == "SERVERLESS"
+                else "spanner"
+                if mode_raw.startswith("SPANNER")
+                else "unknown"
+            )
             record_latency_ms(
                 "gemini_generate_latency_ms",
                 (time.perf_counter() - gen_start) * 1000.0,
                 labels={
-                    "rag_mode": (
-                        "serverless"
-                        if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
-                        == "SERVERLESS"
-                        else "spanner"
-                        if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper().startswith("SPANNER")
-                        else "unknown"
-                    ),
+                    "rag_mode": rag_mode,
+                    "gemini_location": location or "unknown",
                     "rag_location": (
                         rag_vertex._vertex_location_for_corpus(corpus, s.gcp_region)  # noqa: SLF001
                         if corpus
                         else "disabled"
                     ),
-                    "gemini_location": (s.gemini_location or ("global" if "-preview" in s.gemini_model else s.gcp_region)) or "unknown",
                     "gemini_model": s.gemini_model or "unknown",
                     "rag_top_k": str(int(os.environ.get("RAG_TOP_K", "8"))),
                     "status": status,

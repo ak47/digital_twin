@@ -105,7 +105,6 @@ def fetch_rag_context(
         _record_rag_latency(
             ms=(time.perf_counter() - start) * 1000.0,
             status=status,
-            corpus_resource_name=corpus_resource_name,
             vloc=vloc,
             gemini_region=region,
             top_k=top_k,
@@ -126,7 +125,6 @@ def fetch_rag_context(
         _record_rag_latency(
             ms=(time.perf_counter() - start) * 1000.0,
             status=status,
-            corpus_resource_name=corpus_resource_name,
             vloc=vloc,
             gemini_region=region,
             top_k=top_k,
@@ -147,7 +145,6 @@ def fetch_rag_context(
         _record_rag_latency(
             ms=(time.perf_counter() - start) * 1000.0,
             status=status,
-            corpus_resource_name=corpus_resource_name,
             vloc=vloc,
             gemini_region=region,
             top_k=top_k,
@@ -158,7 +155,6 @@ def fetch_rag_context(
     _record_rag_latency(
         ms=(time.perf_counter() - start) * 1000.0,
         status=status,
-        corpus_resource_name=corpus_resource_name,
         vloc=vloc,
         gemini_region=region,
         top_k=top_k,
@@ -181,7 +177,6 @@ def _record_rag_latency(
     *,
     ms: float,
     status: str,
-    corpus_resource_name: str,
     vloc: str,
     gemini_region: str,
     top_k: int,
