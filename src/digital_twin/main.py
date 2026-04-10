@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -33,6 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from digital_twin import llm, rate_limit, session_store
+from digital_twin.metrics import record_latency_ms, sized_label
 from digital_twin.observability import report_exception, setup_logging
 from digital_twin.settings import get_settings
 
@@ -164,16 +166,42 @@ async def chat_post(
 
     async def events() -> AsyncIterator[bytes]:
         pieces: list[str] = []
+        total_start = time.perf_counter()
 
         def run_model() -> str:
             return "".join(llm.stream_reply(history[:-1], prompt))
 
+        model_start = time.perf_counter()
+        model_status = "ok"
         try:
             text = await asyncio.to_thread(run_model)
         except Exception as e:
+            model_status = "error"
             logger.exception("Model invocation failed: %s", e)
             report_exception(e, context={"where": "chat_post.run_model"})
             text = f"(Temporary error: {e!s})"
+        finally:
+            try:
+                record_latency_ms(
+                    "chat_model_latency_ms",
+                    (time.perf_counter() - model_start) * 1000.0,
+                    labels={
+                        "status": model_status,
+                        "gemini_model": (os.environ.get("GEMINI_MODEL") or "").strip() or "unknown",
+                        "gemini_location": (os.environ.get("GEMINI_LOCATION") or os.environ.get("GCP_REGION") or "").strip()
+                        or "unknown",
+                        "rag_mode": (
+                            "serverless"
+                            if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
+                            == "SERVERLESS"
+                            else "spanner"
+                            if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper().startswith("SPANNER")
+                            else "unknown"
+                        ),
+                    },
+                )
+            except Exception:
+                pass
 
         pieces.append(text)
         chunk_size = 48
@@ -193,6 +221,27 @@ async def chat_post(
             logger.exception("Session save failed: %s", e)
             report_exception(e, context={"where": "chat_post.persist_session"})
             yield f"data: {json.dumps({'warning': 'session not saved', 'detail': str(e)})}\n\n".encode()
+
+        try:
+            record_latency_ms(
+                "chat_total_latency_ms",
+                (time.perf_counter() - total_start) * 1000.0,
+                labels={
+                    "status": "ok" if model_status == "ok" else "error",
+                    "gemini_model": (os.environ.get("GEMINI_MODEL") or "").strip() or "unknown",
+                    "rag_mode": (
+                        "serverless"
+                        if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
+                        == "SERVERLESS"
+                        else "spanner"
+                        if (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper().startswith("SPANNER")
+                        else "unknown"
+                    ),
+                    "output_chars": sized_label(len(assistant_msg)),
+                },
+            )
+        except Exception:
+            pass
 
         yield f"data: {json.dumps({'complete': True})}\n\n".encode()
 

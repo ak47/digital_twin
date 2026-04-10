@@ -36,6 +36,22 @@ If `alert_email` is empty, monitoring resources are skipped.
   - Alerting → Policies: `${name_prefix} API errors`, `${name_prefix} digest job failures`
   - Alerting → Notification channels: `${name_prefix} alerts (email)`
 
+## Custom latency metrics (RAG + Gemini)
+
+The API writes custom Cloud Monitoring metrics (requires Cloud Run SA IAM `roles/monitoring.metricWriter`):
+
+- `custom.googleapis.com/digital_twin/rag_retrieval_latency_ms`
+- `custom.googleapis.com/digital_twin/gemini_generate_latency_ms`
+- `custom.googleapis.com/digital_twin/chat_model_latency_ms`
+- `custom.googleapis.com/digital_twin/chat_total_latency_ms`
+
+In **Metrics Explorer**, search for `custom.googleapis.com/digital_twin/` and chart **P50/P95** by labels such as:
+
+- `rag_mode` (spanner/serverless/unknown)
+- `rag_location`
+- `gemini_model`
+- `status`
+
 ## App-level reporting behavior
 
 The application uses:

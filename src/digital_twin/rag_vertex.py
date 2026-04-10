@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,11 @@ def fetch_rag_context(
     corpus_resource_name = corpus_resource_name.strip()
     if not corpus_resource_name or not query.strip():
         return ""
+
+    start = time.perf_counter()
+    status = "ok"
+    context_count = 0
+    context_chars = 0
 
     try:
         import vertexai
@@ -95,9 +101,38 @@ def fetch_rag_context(
         )
     except Exception as e:
         logger.exception("rag.retrieval_query failed: %s", e)
+        status = "error"
+        _record_rag_latency(
+            ms=(time.perf_counter() - start) * 1000.0,
+            status=status,
+            corpus_resource_name=corpus_resource_name,
+            vloc=vloc,
+            gemini_region=region,
+            top_k=top_k,
+            context_count=0,
+            context_chars=0,
+        )
         return ""
 
+    if resp.contexts and resp.contexts.contexts:
+        for c in resp.contexts.contexts:
+            text = (c.text or "").strip()
+            if not text:
+                continue
+            context_count += 1
+            context_chars += len(text)
+
     if not resp.contexts or not resp.contexts.contexts:
+        _record_rag_latency(
+            ms=(time.perf_counter() - start) * 1000.0,
+            status=status,
+            corpus_resource_name=corpus_resource_name,
+            vloc=vloc,
+            gemini_region=region,
+            top_k=top_k,
+            context_count=0,
+            context_chars=0,
+        )
         return ""
 
     parts: list[str] = []
@@ -109,5 +144,68 @@ def fetch_rag_context(
         parts.append(f"### {label}\n{text}")
 
     if not parts:
+        _record_rag_latency(
+            ms=(time.perf_counter() - start) * 1000.0,
+            status=status,
+            corpus_resource_name=corpus_resource_name,
+            vloc=vloc,
+            gemini_region=region,
+            top_k=top_k,
+            context_count=context_count,
+            context_chars=context_chars,
+        )
         return ""
+    _record_rag_latency(
+        ms=(time.perf_counter() - start) * 1000.0,
+        status=status,
+        corpus_resource_name=corpus_resource_name,
+        vloc=vloc,
+        gemini_region=region,
+        top_k=top_k,
+        context_count=context_count,
+        context_chars=context_chars,
+    )
     return "## Retrieved documents (RAG)\n\n" + "\n\n".join(parts)
+
+
+def _rag_mode_label() -> str:
+    raw = (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
+    if raw == "SERVERLESS":
+        return "serverless"
+    if raw.startswith("SPANNER"):
+        return "spanner"
+    return "unknown"
+
+
+def _record_rag_latency(
+    *,
+    ms: float,
+    status: str,
+    corpus_resource_name: str,
+    vloc: str,
+    gemini_region: str,
+    top_k: int,
+    context_count: int,
+    context_chars: int,
+) -> None:
+    try:
+        from digital_twin.metrics import record_latency_ms, sized_label
+
+        record_latency_ms(
+            "rag_retrieval_latency_ms",
+            ms,
+            labels={
+                "rag_mode": _rag_mode_label(),
+                "rag_location": vloc,
+                "gemini_location": (os.environ.get("GEMINI_LOCATION") or gemini_region or "").strip()
+                or "unknown",
+                "gemini_model": (os.environ.get("GEMINI_MODEL") or "").strip() or "unknown",
+                "rag_top_k": str(top_k),
+                "status": status,
+                "rag_context_count": str(max(0, int(context_count))),
+                "rag_context_chars": sized_label(context_chars),
+            },
+        )
+    except Exception:
+        # Metrics must be best-effort only.
+        return
