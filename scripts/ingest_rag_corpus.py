@@ -296,6 +296,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--import-path",
+        action="append",
+        default=[],
+        metavar="GS_URI",
+        help=(
+            "Optional explicit import URI (repeatable), e.g. gs://bucket/rag-sources/knowledge.txt. "
+            "When set, these URIs are imported instead of the default gs://bucket/prefix/ path."
+        ),
+    )
+    parser.add_argument(
         "--import-retries",
         type=int,
         default=3,
@@ -343,13 +353,24 @@ def main() -> None:
     # Vertex treats GCS "directory" imports as a prefix; trailing / avoids ambiguous object-vs-prefix URIs.
     gcs_dir = f"gs://{bucket}/{prefix}/" if prefix else f"gs://{bucket}/"
 
+    explicit_import_paths = [u.strip() for u in args.import_path if u.strip()]
+    if explicit_import_paths:
+        bad = [u for u in explicit_import_paths if not u.startswith("gs://")]
+        if bad:
+            raise SystemExit(f"--import-path must be gs:// URIs. Invalid: {', '.join(bad)}")
+
     if args.skip_upload:
-        import_paths = [gcs_dir]
-        print(f"Importing from prefix {import_paths[0]} (no upload)")
+        import_paths = explicit_import_paths or [gcs_dir]
+        if explicit_import_paths:
+            print(f"Importing explicit URI(s): {', '.join(import_paths)} (no upload)")
+        else:
+            print(f"Importing from prefix {import_paths[0]} (no upload)")
     else:
         paths = [p.resolve() for p in args.files]
         _upload(args.project_id, bucket, prefix, paths)
-        import_paths = [gcs_dir]
+        import_paths = explicit_import_paths or [gcs_dir]
+        if explicit_import_paths:
+            print(f"Importing explicit URI(s): {', '.join(import_paths)}")
 
     def _vertex_location_from_corpus_resource(name: str) -> str | None:
         m = re.search(r"/locations/([^/]+)/ragCorpora/", name)
