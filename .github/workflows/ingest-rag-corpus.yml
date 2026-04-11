@@ -178,7 +178,7 @@ jobs:
               --skip-upload \
               --files README.md \
               --import-path "${uri}" \
-              --max-embedding-requests-per-min 300 \
+              --max-embedding-requests-per-min 120 \
               --corpus-busy-timeout-seconds 1200; then
               echo "::error::Failed importing ${uri}"
               failures=$((failures + 1))

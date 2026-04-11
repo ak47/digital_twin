@@ -116,6 +116,10 @@ def _wait_for_vertex_operations(
     return False
 
 
+def _looks_like_single_pdf_import(paths: list[str]) -> bool:
+    return len(paths) == 1 and paths[0].lower().endswith(".pdf")
+
+
 def _terraform_corpus_bucket(repo_root: Path) -> str:
     tf_dir = repo_root / "terraform"
     # Terraform expects -chdir=DIR as one argv token (not "-chdir" "DIR").
@@ -542,6 +546,7 @@ def main() -> None:
         import_kw["import_result_sink"] = sink
 
     imp = skp = fail = 0
+    tried_pdf_safe_mode = False
     for attempt in range(max(1, args.import_retries)):
         if attempt:
             delay = min(60, 5 * (2 ** (attempt - 1)))
@@ -658,6 +663,41 @@ def main() -> None:
                 )
             raise
         except (gcp_exceptions.InternalServerError, gcp_exceptions.ServiceUnavailable):
+            if (
+                not tried_pdf_safe_mode
+                and _looks_like_single_pdf_import(import_paths)
+            ):
+                tried_pdf_safe_mode = True
+                print(
+                    "Import 5xx on single PDF; retrying once in PDF-safe mode "
+                    "(lower embedding QPM, default parser/chunking)...",
+                    file=sys.stderr,
+                )
+                import_resp = rag.import_files(
+                    rag_corpus.name,
+                    import_paths,
+                    max_embedding_requests_per_min=min(120, args.max_embedding_requests_per_min),
+                    timeout=3600,
+                    **import_kw,
+                )
+                imp = int(getattr(import_resp, "imported_rag_files_count", 0) or 0)
+                skp = int(getattr(import_resp, "skipped_rag_files_count", 0) or 0)
+                fail = int(getattr(import_resp, "failed_rag_files_count", 0) or 0)
+                print(
+                    f"Vertex import result (PDF-safe mode): imported={imp}, skipped={skp}, failed={fail}",
+                    file=sys.stderr,
+                )
+                if fail:
+                    print(
+                        "::error::RAG import reported failed_rag_files_count=%s — corpus was not fully updated. "
+                        "See --import-result-sink or the Vertex console for this corpus."
+                        % fail,
+                        file=sys.stderr,
+                    )
+                    if sink:
+                        _dump_import_result_sink(sink, args.project_id)
+                    raise SystemExit(1)
+                break
             if attempt >= args.import_retries - 1:
                 tail = f"\nPer-file import details: {sink}" if sink else ""
                 print(
