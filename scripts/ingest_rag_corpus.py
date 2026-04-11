@@ -67,6 +67,55 @@ def _extract_rag_operation_ids(exc: BaseException) -> list[str]:
     return [op.strip() for op in m.group(1).split(",") if op.strip()]
 
 
+def _wait_for_vertex_operations(
+    op_ids: list[str],
+    *,
+    project_id: str,
+    region: str,
+    timeout_seconds: int,
+) -> bool:
+    """Best-effort wait for blocking Vertex operation ids to finish."""
+    if not op_ids:
+        return False
+    deadline = time.time() + max(0, timeout_seconds)
+    while time.time() < deadline:
+        pending: list[str] = []
+        for op_id in op_ids:
+            r = subprocess.run(
+                [
+                    "gcloud",
+                    "ai",
+                    "operations",
+                    "describe",
+                    op_id,
+                    "--region",
+                    region,
+                    "--project",
+                    project_id,
+                    "--format=value(done,error.code,error.message)",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if r.returncode != 0:
+                # If we cannot inspect, keep waiting using timeout budget.
+                pending.append(op_id)
+                continue
+            out = (r.stdout or "").strip()
+            done_flag = out.split(";")[0].strip().lower() if out else ""
+            if done_flag not in ("true", "1", "yes"):
+                pending.append(op_id)
+        if not pending:
+            return True
+        print(
+            f"Waiting for blocking Vertex operation(s): {', '.join(pending)}",
+            file=sys.stderr,
+        )
+        time.sleep(15)
+    return False
+
+
 def _terraform_corpus_bucket(repo_root: Path) -> str:
     tf_dir = repo_root / "terraform"
     # Terraform expects -chdir=DIR as one argv token (not "-chdir" "DIR").
@@ -312,6 +361,12 @@ def main() -> None:
         help="Retries for rag.import_files on transient 5xx and corpus-locked errors (default 3).",
     )
     parser.add_argument(
+        "--corpus-busy-timeout-seconds",
+        type=int,
+        default=900,
+        help="Max seconds to wait for blocking RagCorpus operations before giving up (default 900).",
+    )
+    parser.add_argument(
         "--corpus-resource-name",
         default="",
         help=(
@@ -521,6 +576,15 @@ def main() -> None:
         except gcp_exceptions.FailedPrecondition as e:
             if _is_rag_corpus_busy_error(e):
                 op_ids = _extract_rag_operation_ids(e)
+                waited = _wait_for_vertex_operations(
+                    op_ids,
+                    project_id=args.project_id,
+                    region=vertex_location,
+                    timeout_seconds=args.corpus_busy_timeout_seconds,
+                )
+                if waited:
+                    print("Blocking operation(s) finished; retrying import now...", file=sys.stderr)
+                    continue
                 if attempt < args.import_retries - 1:
                     lock_delay = min(180, 20 * (attempt + 1))
                     op_hint = f" (operation IDs: {', '.join(op_ids)})" if op_ids else ""
@@ -544,6 +608,15 @@ def main() -> None:
             cause = e.__cause__
             if cause is not None and isinstance(cause, gcp_exceptions.FailedPrecondition) and _is_rag_corpus_busy_error(cause):
                 op_ids = _extract_rag_operation_ids(cause)
+                waited = _wait_for_vertex_operations(
+                    op_ids,
+                    project_id=args.project_id,
+                    region=vertex_location,
+                    timeout_seconds=args.corpus_busy_timeout_seconds,
+                )
+                if waited:
+                    print("Blocking operation(s) finished; retrying import now...", file=sys.stderr)
+                    continue
                 if attempt < args.import_retries - 1:
                     lock_delay = min(180, 20 * (attempt + 1))
                     op_hint = f" (operation IDs: {', '.join(op_ids)})" if op_ids else ""
