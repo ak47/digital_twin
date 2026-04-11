@@ -55,6 +55,18 @@ def _is_rag_engine_unprovisioned_error(exc: BaseException) -> bool:
     return "unprovisioned" in msg and "rag engine" in msg
 
 
+def _is_rag_corpus_busy_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "other operations running on the ragcorpus" in msg
+
+
+def _extract_rag_operation_ids(exc: BaseException) -> list[str]:
+    m = re.search(r"Operation IDs are:\s*\[([^\]]+)\]", str(exc), flags=re.IGNORECASE)
+    if not m:
+        return []
+    return [op.strip() for op in m.group(1).split(",") if op.strip()]
+
+
 def _terraform_corpus_bucket(repo_root: Path) -> str:
     tf_dir = repo_root / "terraform"
     # Terraform expects -chdir=DIR as one argv token (not "-chdir" "DIR").
@@ -97,6 +109,41 @@ def _upload(
         gs_uris.append(uri)
         print(f"Uploaded {p} -> {uri}")
     return gs_uris
+
+
+def _dump_import_result_sink(uri: str, project_id: str, *, max_bytes: int = 96 * 1024) -> None:
+    """Print gs://… NDJSON written by Vertex import_result_sink (best-effort)."""
+    if not uri.startswith("gs://"):
+        return
+    tail = uri[5:]
+    slash = tail.find("/")
+    if slash < 0:
+        return
+    bucket_name, blob_path = tail[:slash], tail[slash + 1 :]
+    try:
+        from google.cloud import storage
+
+        client = storage.Client(project=project_id)
+        blob = client.bucket(bucket_name).blob(blob_path)
+        if not blob.exists():
+            print(
+                f"import_result_sink not found yet ({uri!r}) — LRO may have failed before flush.\n"
+                f"Try: gcloud storage cat {uri!r}",
+                file=sys.stderr,
+            )
+            return
+        data = blob.download_as_bytes(timeout=120)
+    except Exception as e:
+        print(
+            f"Could not read import_result_sink ({uri!r}): {e}\n"
+            f"Try: gcloud storage cat {uri!r}",
+            file=sys.stderr,
+        )
+        return
+    text = data[:max_bytes].decode("utf-8", errors="replace")
+    print(f"\n--- import_result_sink ({uri}) ---\n{text}", file=sys.stderr)
+    if len(data) > max_bytes:
+        print(f"... truncated ({len(data)} bytes total)", file=sys.stderr)
 
 
 def _rag_deployment_mode() -> str:
@@ -252,7 +299,7 @@ def main() -> None:
         "--import-retries",
         type=int,
         default=3,
-        help="Retries for rag.import_files on 5xx (default 3).",
+        help="Retries for rag.import_files on transient 5xx and corpus-locked errors (default 3).",
     )
     parser.add_argument(
         "--corpus-resource-name",
@@ -293,14 +340,16 @@ def main() -> None:
     from vertexai import rag
 
     prefix = args.prefix.strip().strip("/")
+    # Vertex treats GCS "directory" imports as a prefix; trailing / avoids ambiguous object-vs-prefix URIs.
+    gcs_dir = f"gs://{bucket}/{prefix}/" if prefix else f"gs://{bucket}/"
 
     if args.skip_upload:
-        import_paths = [f"gs://{bucket}/{prefix}"]
+        import_paths = [gcs_dir]
         print(f"Importing from prefix {import_paths[0]} (no upload)")
     else:
         paths = [p.resolve() for p in args.files]
         _upload(args.project_id, bucket, prefix, paths)
-        import_paths = [f"gs://{bucket}/{prefix}"]
+        import_paths = [gcs_dir]
 
     def _vertex_location_from_corpus_resource(name: str) -> str | None:
         m = re.search(r"/locations/([^/]+)/ragCorpora/", name)
@@ -444,8 +493,55 @@ def main() -> None:
                     % fail,
                     file=sys.stderr,
                 )
+                if sink:
+                    _dump_import_result_sink(sink, args.project_id)
                 raise SystemExit(1)
             break
+        except gcp_exceptions.FailedPrecondition as e:
+            if _is_rag_corpus_busy_error(e):
+                op_ids = _extract_rag_operation_ids(e)
+                if attempt < args.import_retries - 1:
+                    lock_delay = min(180, 20 * (attempt + 1))
+                    op_hint = f" (operation IDs: {', '.join(op_ids)})" if op_ids else ""
+                    print(
+                        f"Corpus has another import/update in progress{op_hint}; waiting {lock_delay}s and retrying...",
+                        file=sys.stderr,
+                    )
+                    time.sleep(lock_delay)
+                    continue
+                op_ref = ", ".join(op_ids) if op_ids else "unknown"
+                print(
+                    "RAG corpus is still busy after retries.\n"
+                    f"Blocking operation IDs: {op_ref}\n"
+                    "Wait for that operation to complete, then re-run ingest.\n"
+                    "Tip: check status in Vertex AI console (RAG > Operations) or with "
+                    "'gcloud ai operations describe OPERATION_ID --region us-central1 --project YOUR_PROJECT_ID'.",
+                    file=sys.stderr,
+                )
+            raise
+        except RuntimeError as e:
+            cause = e.__cause__
+            if cause is not None and isinstance(cause, gcp_exceptions.FailedPrecondition) and _is_rag_corpus_busy_error(cause):
+                op_ids = _extract_rag_operation_ids(cause)
+                if attempt < args.import_retries - 1:
+                    lock_delay = min(180, 20 * (attempt + 1))
+                    op_hint = f" (operation IDs: {', '.join(op_ids)})" if op_ids else ""
+                    print(
+                        f"Corpus has another import/update in progress{op_hint}; waiting {lock_delay}s and retrying...",
+                        file=sys.stderr,
+                    )
+                    time.sleep(lock_delay)
+                    continue
+                op_ref = ", ".join(op_ids) if op_ids else "unknown"
+                print(
+                    "RAG corpus is still busy after retries.\n"
+                    f"Blocking operation IDs: {op_ref}\n"
+                    "Wait for that operation to complete, then re-run ingest.\n"
+                    "Tip: check status in Vertex AI console (RAG > Operations) or with "
+                    "'gcloud ai operations describe OPERATION_ID --region us-central1 --project YOUR_PROJECT_ID'.",
+                    file=sys.stderr,
+                )
+            raise
         except gcp_exceptions.PermissionDenied as e:
             msg = str(e).lower()
             if "ragfiles.import" in msg or "rag_files.import" in msg:
@@ -470,6 +566,8 @@ def main() -> None:
                     "Vertex AI Service Agent). See terraform/README.md → RAG.",
                     file=sys.stderr,
                 )
+                if sink:
+                    _dump_import_result_sink(sink, args.project_id)
                 raise
 
     resource = rag_corpus.name
