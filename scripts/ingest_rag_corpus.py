@@ -361,6 +361,12 @@ def main() -> None:
         help="Retries for rag.import_files on transient 5xx and corpus-locked errors (default 3).",
     )
     parser.add_argument(
+        "--max-embedding-requests-per-min",
+        type=int,
+        default=1000,
+        help="Vertex import max_embedding_requests_per_min (default 1000). Lower for stability if imports 500.",
+    )
+    parser.add_argument(
         "--corpus-busy-timeout-seconds",
         type=int,
         default=900,
@@ -551,7 +557,7 @@ def main() -> None:
                         chunk_overlap=100,
                     ),
                 ),
-                max_embedding_requests_per_min=1000,
+                max_embedding_requests_per_min=args.max_embedding_requests_per_min,
                 timeout=3600,
                 **import_kw,
             )

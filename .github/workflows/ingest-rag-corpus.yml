@@ -156,11 +156,35 @@ jobs:
           fi
           echo "Corpus bucket (from Terraform state): ${BUCKET}"
           echo "RagCorpus (from Terraform state, same as Cloud Run when TF-managed): ${CORPUS}"
-          # --region is only used if the corpus name lacks /locations/REGION/ (it should not).
-          uv run python scripts/ingest_rag_corpus.py \
-            --project-id "${PROJECT_ID}" \
-            --region "us-central1" \
-            --bucket "${BUCKET}" \
-            --corpus-resource-name "${CORPUS}" \
-            --skip-upload \
-            --files README.md
+          mapfile -t OBJECT_URIS < <(gcloud storage ls "gs://${BUCKET}/rag-sources/**" 2>/dev/null || true)
+          if [ "${#OBJECT_URIS[@]}" -eq 0 ]; then
+            echo "::error::No objects found under gs://${BUCKET}/rag-sources/"
+            exit 1
+          fi
+          echo "Found ${#OBJECT_URIS[@]} object(s) to import."
+          failures=0
+          for uri in "${OBJECT_URIS[@]}"; do
+            [ -z "${uri}" ] && continue
+            case "${uri}" in
+              */) continue ;; # skip directory placeholders
+            esac
+            echo ""
+            echo "Importing: ${uri}"
+            if ! uv run python scripts/ingest_rag_corpus.py \
+              --project-id "${PROJECT_ID}" \
+              --region "us-central1" \
+              --bucket "${BUCKET}" \
+              --corpus-resource-name "${CORPUS}" \
+              --skip-upload \
+              --files README.md \
+              --import-path "${uri}" \
+              --max-embedding-requests-per-min 300 \
+              --corpus-busy-timeout-seconds 1200; then
+              echo "::error::Failed importing ${uri}"
+              failures=$((failures + 1))
+            fi
+          done
+          if [ "${failures}" -gt 0 ]; then
+            echo "::error::RAG import finished with ${failures} failed object(s)."
+            exit 1
+          fi
