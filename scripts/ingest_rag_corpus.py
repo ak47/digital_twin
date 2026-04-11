@@ -116,8 +116,8 @@ def _wait_for_vertex_operations(
     return False
 
 
-def _looks_like_single_pdf_import(paths: list[str]) -> bool:
-    return len(paths) == 1 and paths[0].lower().endswith(".pdf")
+def _looks_like_single_uri_import(paths: list[str]) -> bool:
+    return len(paths) == 1 and paths[0].startswith("gs://")
 
 
 def _terraform_corpus_bucket(repo_root: Path) -> str:
@@ -546,7 +546,7 @@ def main() -> None:
         import_kw["import_result_sink"] = sink
 
     imp = skp = fail = 0
-    tried_pdf_safe_mode = False
+    tried_safe_mode = False
     for attempt in range(max(1, args.import_retries)):
         if attempt:
             delay = min(60, 5 * (2 ** (attempt - 1)))
@@ -664,19 +664,19 @@ def main() -> None:
             raise
         except (gcp_exceptions.InternalServerError, gcp_exceptions.ServiceUnavailable):
             if (
-                not tried_pdf_safe_mode
-                and _looks_like_single_pdf_import(import_paths)
+                not tried_safe_mode
+                and _looks_like_single_uri_import(import_paths)
             ):
-                tried_pdf_safe_mode = True
+                tried_safe_mode = True
                 print(
-                    "Import 5xx on single PDF; retrying once in PDF-safe mode "
+                    "Import 5xx on single-object URI; retrying once in safe mode "
                     "(lower embedding QPM, default parser/chunking)...",
                     file=sys.stderr,
                 )
                 import_resp = rag.import_files(
                     rag_corpus.name,
                     import_paths,
-                    max_embedding_requests_per_min=min(120, args.max_embedding_requests_per_min),
+                    max_embedding_requests_per_min=min(60, args.max_embedding_requests_per_min),
                     timeout=3600,
                     **import_kw,
                 )
@@ -684,7 +684,7 @@ def main() -> None:
                 skp = int(getattr(import_resp, "skipped_rag_files_count", 0) or 0)
                 fail = int(getattr(import_resp, "failed_rag_files_count", 0) or 0)
                 print(
-                    f"Vertex import result (PDF-safe mode): imported={imp}, skipped={skp}, failed={fail}",
+                    f"Vertex import result (safe mode): imported={imp}, skipped={skp}, failed={fail}",
                     file=sys.stderr,
                 )
                 if fail:
@@ -702,8 +702,11 @@ def main() -> None:
                 tail = f"\nPer-file import details: {sink}" if sink else ""
                 print(
                     f"RAG import failed after {args.import_retries} attempt(s).{tail}\n"
-                    "Fix: terraform apply (RAG Engine in --region + corpus bucket IAM for "
-                    "Vertex AI Service Agent). See terraform/README.md → RAG.",
+                    "Fixes to try:\n"
+                    "  1) terraform apply (RAG Engine in --region + corpus bucket IAM for Vertex AI Service Agent)\n"
+                    "  2) If IAM is already correct and 5xx persists for all file types, create a NEW RagCorpus in this region,\n"
+                    "     update rag_corpus_resource_name in terraform.tfvars, terraform apply, then re-import.\n"
+                    "See terraform/README.md → RAG.",
                     file=sys.stderr,
                 )
                 if sink:

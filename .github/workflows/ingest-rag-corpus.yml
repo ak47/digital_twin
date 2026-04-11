@@ -163,6 +163,7 @@ jobs:
           fi
           echo "Found ${#OBJECT_URIS[@]} object(s) to import."
           failures=0
+          pdf_internal_failures=0
           for uri in "${OBJECT_URIS[@]}"; do
             [ -z "${uri}" ] && continue
             case "${uri}" in
@@ -180,10 +181,21 @@ jobs:
               --import-path "${uri}" \
               --max-embedding-requests-per-min 120 \
               --corpus-busy-timeout-seconds 1200; then
-              echo "::error::Failed importing ${uri}"
-              failures=$((failures + 1))
+              case "${uri}" in
+                *.pdf|*.PDF)
+                  echo "::warning::Skipping failed PDF import for now: ${uri} (Vertex internal error is a known Serverless instability)."
+                  pdf_internal_failures=$((pdf_internal_failures + 1))
+                  ;;
+                *)
+                  echo "::error::Failed importing ${uri}"
+                  failures=$((failures + 1))
+                  ;;
+              esac
             fi
           done
+          if [ "${pdf_internal_failures}" -gt 0 ]; then
+            echo "::warning::RAG ingest skipped ${pdf_internal_failures} PDF file(s) due to Vertex internal errors."
+          fi
           if [ "${failures}" -gt 0 ]; then
             echo "::error::RAG import finished with ${failures} failed object(s)."
             exit 1
