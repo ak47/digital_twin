@@ -17,6 +17,8 @@ Terraform provisions (when `alert_email` is set):
 - Alert policies:
   - `${name_prefix} API errors` (any errors in 5 minutes)
   - `${name_prefix} digest job failures` (any errors in 15 minutes)
+  - `${name_prefix} API critical events` (structured `chat_model_invocation_failed` / `chat_session_persist_failed`)
+  - `${name_prefix} API sustained errors` (>= 5 ERROR logs in 10 minutes)
 
 To enable in a given environment, pass `alert_email` via GitHub Actions (recommended) or Terraform CLI:
 
@@ -98,7 +100,71 @@ The application uses:
 - `google-cloud-logging` to integrate Python logging with Cloud Logging on GCP
 - `google-cloud-error-reporting` for explicit reporting of **caught-but-important** exceptions
 
-You’ll still see stack traces in logs via `logger.exception(...)`.
+Application and uvicorn logs are emitted as structured JSON with a shared schema. Core fields:
+
+- Required: `event`, `severity`, `service`, `env`, `timestamp`, `request_id`, `trace_id`, `session_id`
+- Error-focused: `error_type`, `error_code`, `where`, `exception_message`, `stacktrace`
+- Runtime context examples: `status`, `http_path`, `status_code`, `rag_mode`, `gemini_model`
+
+Example structured event names:
+
+- `chat_model_invocation_failed`
+- `chat_session_persist_failed`
+- `chat_request_completed`
+- `exception_reported`
+
+## Query cookbook (Cloud Logging)
+
+Look up API model failures:
+
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="${name_prefix}-api"
+jsonPayload.event="chat_model_invocation_failed"
+```
+
+Group all request logs for one request id:
+
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="${name_prefix}-api"
+jsonPayload.request_id="REQUEST_ID_HERE"
+```
+
+Find sessions that failed to persist:
+
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="${name_prefix}-api"
+jsonPayload.event="chat_session_persist_failed"
+```
+
+Find all reported exceptions by location:
+
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="${name_prefix}-api"
+jsonPayload.event="exception_reported"
+jsonPayload.where="chat_post.run_model"
+```
+
+## Rollout verification checklist
+
+- Deploy to non-prod and make one normal chat request.
+- Verify logs include `jsonPayload.request_id` and `jsonPayload.session_id`.
+- Trigger a controlled failure path (non-prod) and verify:
+  - `chat_model_invocation_failed` or `chat_session_persist_failed` exists in logs
+  - stack trace appears in `jsonPayload.stacktrace`
+  - Error Reporting receives the grouped exception
+  - `${name_prefix} API critical events` policy opens and resolves
+- Verify broad fallback alert `${name_prefix} API errors` still fires for uncaught ERROR logs.
+
+## Rollback strategy
+
+- Keep broad `severity>=ERROR` log metrics and alerts enabled during rollout.
+- If parser/format regressions happen, first remove `--log-config /app/uvicorn_logging.json` and redeploy.
+- If needed, revert app-level structured event emission while keeping existing Terraform coarse alerts.
+- Terraform alert additions can be reverted independently from app runtime changes.
 
 ## Billing (RAG / Spanner vs Serverless)
 

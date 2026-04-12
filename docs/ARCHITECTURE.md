@@ -96,6 +96,42 @@ On deploy, **environment variables** for the **API service** use a **custom deli
 
 Secret names and copying Terraform outputs into GitHub are documented in **`terraform/README.md`** and helper **`scripts/print-github-actions-secrets.sh`**.
 
+## Observability architecture
+
+Runtime logging is structured end-to-end:
+
+- `observability.setup_logging()` installs a JSON formatter for Python logs.
+- FastAPI middleware creates/propagates `X-Request-Id`, parses `x-cloud-trace-context`, and injects request context into logs.
+- Uvicorn uses `uvicorn_logging.json` so access/error logs follow the same JSON format.
+- Caught-but-important failures are emitted as named events and also reported through Cloud Error Reporting (`report_exception`).
+
+```mermaid
+flowchart LR
+    Request[IncomingRequest] --> Middleware[RequestContextMiddleware]
+    Middleware --> AppLogs[AppStructuredEvents]
+    Middleware --> UvicornLogs[UvicornStructuredLogs]
+    AppLogs --> CloudLogging[CloudLogging_jsonPayload]
+    UvicornLogs --> CloudLogging
+    AppLogs --> ErrorReporting[CloudErrorReporting]
+    CloudLogging --> LogMetrics[LogBasedMetrics]
+    LogMetrics --> AlertPolicies[MonitoringAlertPolicies]
+```
+
+### Structured event model
+
+High-signal API events currently include:
+
+- `chat_model_invocation_failed`
+- `chat_session_persist_failed`
+- `chat_request_completed`
+- `exception_reported`
+
+Alerting in Terraform now combines:
+
+- broad fallback (`severity>=ERROR`) for unknown/unexpected issues
+- event-specific alerts keyed on `jsonPayload.event`
+- sustained-volume alerting to reduce one-off alert noise
+
 ## RAG corpus lifecycle
 
 Typical operator flow (details in **`terraform/README.md`** → RAG):

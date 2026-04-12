@@ -52,6 +52,26 @@ Optional repository **Variables** (for example **`CORS_ALLOWED_ORIGINS`**; **`RA
 
 **Region:** Default compute / primary Terraform region is **`us-central1`** ([terraform/variables.tf](terraform/variables.tf)). RAG ingest may use a different region if you configured `rag_corpus_ingest_region` (see [docs/rag-ingestion.md](docs/rag-ingestion.md)).
 
+## Structured logging and error monitoring
+
+The API now emits **structured JSON logs** across app handlers and uvicorn output, with request/session correlation fields for easier triage.
+
+- Shared schema includes `event`, `severity`, `service`, `env`, `timestamp`, `request_id`, `trace_id`, `session_id`
+- Error events include `error_type`, `error_code`, `where`, `exception_message`, and `stacktrace`
+- `POST /api/chat` emits named events such as:
+  - `chat_model_invocation_failed`
+  - `chat_session_persist_failed`
+  - `chat_request_completed`
+
+Terraform keeps coarse fallback alerts and now also provisions event-focused policies:
+
+- `${name_prefix} API errors` (existing broad `severity>=ERROR`)
+- `${name_prefix} API critical events` (structured event failures)
+- `${name_prefix} API sustained errors` (elevated error volume window)
+- `${name_prefix} digest job failures`
+
+See [docs/observability.md](docs/observability.md) for Cloud Logging query examples, rollout checks, and rollback guidance.
+
 ## Repository layout
 
 | Path | Role |

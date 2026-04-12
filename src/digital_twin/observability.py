@@ -4,8 +4,11 @@ import logging
 import os
 from typing import Any
 
+from digital_twin.structured_logging import configure_root_logger, get_logger
+
 _BOOTSTRAPPED = False
 _error_client = None
+_logger = get_logger(__name__)
 
 
 def _running_on_gcp() -> bool:
@@ -27,9 +30,9 @@ def setup_logging(*, level: int = logging.INFO) -> None:
     if _BOOTSTRAPPED:
         return
 
-    # Keep a baseline config so local runs/tests have logs even if the Cloud Logging
-    # client is unavailable.
-    logging.basicConfig(level=level)
+    # Always emit structured JSON logs from stdout/stderr for consistency across
+    # local runs, tests, and Cloud Run.
+    configure_root_logger(level=level)
 
     if _running_on_gcp():
         try:
@@ -37,11 +40,35 @@ def setup_logging(*, level: int = logging.INFO) -> None:
 
             client = cloud_logging.Client()
             client.setup_logging(log_level=level)
+            # Keep exactly one deterministic root handler to avoid duplicate
+            # messages when Cloud Logging client config attaches additional handlers.
+            configure_root_logger(level=level)
         except Exception:
             # Never crash the service/job if observability isn't configured.
-            logging.getLogger(__name__).exception("Failed to initialize Cloud Logging client")
+            _logger.exception(
+                "Failed to initialize Cloud Logging client",
+                extra={"event": "cloud_logging_bootstrap_failed"},
+            )
 
     _BOOTSTRAPPED = True
+
+
+def log_event(
+    *,
+    event: str,
+    severity: int = logging.INFO,
+    message: str = "",
+    logger: logging.Logger | None = None,
+    exc_info: Any | None = None,
+    **fields: Any,
+) -> None:
+    active_logger = logger or _logger
+    active_logger.log(
+        severity,
+        message or event,
+        extra={"event": event, "event_fields": fields},
+        exc_info=exc_info,
+    )
 
 
 def report_exception(exc: BaseException, *, context: dict[str, Any] | None = None) -> None:
@@ -60,20 +87,22 @@ def report_exception(exc: BaseException, *, context: dict[str, Any] | None = Non
             from google.cloud import error_reporting  # type: ignore
 
             _error_client = error_reporting.Client()
-        # error_reporting.Client.report_exception uses sys.exc_info if no arg,
-        # but we may be outside except scope. report() accepts strings; instead,
-        # we log + report_exception best-effort by re-raising is too invasive.
-        #
-        # So: attach context via structured log and still call report_exception()
-        # inside an active exception scope when possible.
-        if context:
-            logging.getLogger(__name__).error(
-                "Reporting exception (context=%s): %s",
-                context,
-                repr(exc),
-            )
+        fields = dict(context or {})
+        fields.setdefault("error_type", type(exc).__name__)
+        fields.setdefault("exception_message", str(exc))
+        fields.setdefault("error_code", "unhandled_exception")
+        log_event(
+            event="exception_reported",
+            severity=logging.ERROR,
+            message="Reporting exception to Cloud Error Reporting",
+            logger=_logger,
+            **fields,
+        )
         # Best-effort: if we're currently handling an exception, this will pick it up.
         _error_client.report_exception()
     except Exception:
-        logging.getLogger(__name__).exception("Failed to report exception to Error Reporting")
+        _logger.exception(
+            "Failed to report exception to Error Reporting",
+            extra={"event": "error_reporting_failed", "event_fields": {"error_code": "error_reporting_write_failed"}},
+        )
 

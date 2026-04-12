@@ -28,6 +28,7 @@ def test_chat_post_streams_and_sets_session_header(monkeypatch) -> None:
     assert r.status_code == 200
     assert r.headers.get("content-type", "").startswith("text/event-stream")
     assert r.headers.get(SESSION_HEADER)
+    assert r.headers.get("X-Request-Id")
 
     events = _sse_events(r.text)
     assert any("text" in e for e in events)

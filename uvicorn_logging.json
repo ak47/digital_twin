@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "json": {
+      "()": "digital_twin.structured_logging.JsonFormatter"
+    }
+  },
+  "filters": {
+    "request_context": {
+      "()": "digital_twin.structured_logging.RequestContextFilter"
+    }
+  },
+  "handlers": {
+    "default": {
+      "class": "logging.StreamHandler",
+      "stream": "ext://sys.stdout",
+      "formatter": "json",
+      "filters": [
+        "request_context"
+      ]
+    }
+  },
+  "loggers": {
+    "uvicorn.error": {
+      "handlers": [
+        "default"
+      ],
+      "level": "INFO",
+      "propagate": false
+    },
+    "uvicorn.access": {
+      "handlers": [
+        "default"
+      ],
+      "level": "INFO",
+      "propagate": false
+    }
+  }
+}
