@@ -26,6 +26,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from digital_twin.metrics import default_context, record_latency_ms  # noqa: E402
+from digital_twin.observability import log_event, setup_logging  # noqa: E402
 
 
 def main() -> None:
@@ -37,18 +38,22 @@ def main() -> None:
     )
     args = p.parse_args()
 
+    setup_logging(level=logging.INFO if args.verbose else logging.WARNING)
     if args.verbose:
-        logging.basicConfig(level=logging.INFO)
         os.environ.setdefault("METRICS_DEBUG", "1")
 
     ctx = default_context()
+    logger = logging.getLogger(__name__)
     if args.verbose:
-        logging.getLogger(__name__).info(
-            "metric context: project_id=%r region=%r service=%r revision=%r",
-            ctx.project_id,
-            ctx.region,
-            ctx.service,
-            ctx.revision,
+        log_event(
+            event="metrics_smoke_context",
+            severity=logging.INFO,
+            message="metric context resolved",
+            logger=logger,
+            project_id=ctx.project_id,
+            region=ctx.region,
+            service=ctx.service,
+            revision=ctx.revision,
         )
 
     ok = record_latency_ms(
@@ -61,7 +66,13 @@ def main() -> None:
         },
     )
     time.sleep(0.2)
-    print("ok" if ok else "failed (see logs; try METRICS_DEBUG=1 or --verbose)")
+    log_event(
+        event="metrics_smoke_emit_result",
+        severity=logging.INFO if ok else logging.ERROR,
+        message="metric smoke point emission completed",
+        logger=logger,
+        status="ok" if ok else "failed",
+    )
     raise SystemExit(0 if ok else 2)
 
 

@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -35,8 +36,9 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from digital_twin import llm, rate_limit, session_store
 from digital_twin.metrics import record_latency_ms, sized_label
-from digital_twin.observability import report_exception, setup_logging
+from digital_twin.observability import log_event, report_exception, setup_logging
 from digital_twin.settings import get_settings
+from digital_twin.structured_logging import clear_request_context, set_request_context, update_session_context
 
 logger = logging.getLogger(__name__)
 setup_logging(level=logging.INFO)
@@ -94,6 +96,26 @@ if _origins:
     )
 
 
+def _trace_id_from_header(request: Request) -> str | None:
+    header = (request.headers.get("x-cloud-trace-context") or "").strip()
+    if not header:
+        return None
+    return header.split("/", 1)[0] or None
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = (request.headers.get("x-request-id") or "").strip() or str(uuid.uuid4())
+    trace_id = _trace_id_from_header(request)
+    set_request_context(request_id=request_id, trace_id=trace_id, session_id=None)
+    try:
+        response = await call_next(request)
+    finally:
+        clear_request_context()
+    response.headers["X-Request-Id"] = request_id
+    return response
+
+
 @app.get("/health", response_class=JSONResponse)
 def health() -> dict[str, str]:
     """Liveness/readiness; always application/json when this app handles the request."""
@@ -134,6 +156,7 @@ def chat_history(
     x_session_id: str | None = Header(default=None, alias=SESSION_HEADER),
 ) -> JSONResponse:
     sid = _resolve_session_id_or_400(x_session_id)
+    update_session_context(sid)
     messages = session_store.load_messages(sid)
     body = {"messages": messages}
     return _json_with_session_id(sid=sid, body=body)
@@ -152,6 +175,7 @@ async def chat_post(
     )
 
     sid = _resolve_session_id_or_400(x_session_id)
+    update_session_context(sid)
 
     try:
         payload = await request.json()
@@ -177,7 +201,17 @@ async def chat_post(
             text = await asyncio.to_thread(run_model)
         except Exception as e:
             model_status = "error"
-            logger.exception("Model invocation failed: %s", e)
+            log_event(
+                event="chat_model_invocation_failed",
+                severity=logging.ERROR,
+                message="Model invocation failed",
+                logger=logger,
+                where="chat_post.run_model",
+                error_code="chat_model_inference_error",
+                exception_message=str(e),
+                session_id=sid,
+                exc_info=True,
+            )
             report_exception(e, context={"where": "chat_post.run_model"})
             text = f"(Temporary error: {e!s})"
         finally:
@@ -219,7 +253,17 @@ async def chat_post(
         try:
             await asyncio.to_thread(persist)
         except Exception as e:
-            logger.exception("Session save failed: %s", e)
+            log_event(
+                event="chat_session_persist_failed",
+                severity=logging.ERROR,
+                message="Session save failed",
+                logger=logger,
+                where="chat_post.persist_session",
+                error_code="chat_session_persist_error",
+                exception_message=str(e),
+                session_id=sid,
+                exc_info=True,
+            )
             report_exception(e, context={"where": "chat_post.persist_session"})
             yield f"data: {json.dumps({'warning': 'session not saved', 'detail': str(e)})}\n\n".encode()
 
@@ -245,6 +289,15 @@ async def chat_post(
         except Exception:
             pass
 
+        log_event(
+            event="chat_request_completed",
+            severity=logging.INFO,
+            message="Chat request stream completed",
+            logger=logger,
+            status=model_status,
+            session_id=sid,
+            output_chars=len(assistant_msg),
+        )
         yield f"data: {json.dumps({'complete': True})}\n\n".encode()
 
     headers = {SESSION_HEADER: sid}
