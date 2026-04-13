@@ -54,12 +54,12 @@ In **Metrics Explorer**, search for `custom.googleapis.com/digital_twin/`. Chart
 - `gemini_model`
 - `status`
 
-Local smoke: `uv sync --extra dev`, `export GOOGLE_CLOUD_PROJECT=...`, optional `METRICS_DEBUG=1 uv run python scripts/emit_test_metric.py`.
+Local smoke: `uv sync --extra dev`, set `GOOGLE_CLOUD_PROJECT`, run the API and complete a request path that emits metrics (for example `POST /api/chat` with valid Vertex config), optionally with `METRICS_DEBUG=1` to log metric write details.
 
 ### If metrics do not appear in Metrics Explorer
 
 1. **Confirm the write API succeeded** (not just “ok” printed):
-   - `METRICS_DEBUG=1 uv run python scripts/emit_test_metric.py --verbose` — should log `metrics ok:` or a full exception.
+   - With `METRICS_DEBUG=1` on the API process, inspect logs for metric write errors after a request that records latency/custom metrics.
    - Exit code **2** means the Monitoring API rejected the write.
 
 2. **Correct GCP project in the console** — metrics land in the project passed to `create_time_series` (`GOOGLE_CLOUD_PROJECT` / metadata project id), not necessarily the org/folder you have selected elsewhere.

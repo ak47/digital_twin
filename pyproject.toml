@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "digital-twin-api"
 version = "0.1.0"
-description = "Cloud Run API for no-ego career chat (Vertex RAG + Gemini)"
+description = "Cloud Run API for career chat (Vertex RAG + Gemini)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

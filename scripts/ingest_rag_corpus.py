@@ -9,7 +9,7 @@ Auth: gcloud auth application-default login
 Example:
   cd /path/to/digital_twin
   uv run python scripts/ingest_rag_corpus.py \\
-    --project-id digital-twin-492318 \\
+    --project-id YOUR_GCP_PROJECT_ID \\
     --files ./knowledge.txt ./Profile.pdf
 
 Default --region is us-central1. If Google blocks RAG there, stderr describes a backup path

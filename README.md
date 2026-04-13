@@ -1,10 +1,10 @@
 # digital_twin
 
-[![CI](https://github.com/ak47/digital_twin/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ak47/digital_twin/actions/workflows/ci.yml)
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (GitHub Actions on push / PR).
 
-Backend for the **no-ego** career chat experience: a **FastAPI** service on **Cloud Run** that streams replies with **Vertex AI Gemini**, optional **Vertex RAG Engine** retrieval over a **GCS** corpus bucket, and optional **GCS-backed chat sessions** (with an optional **idle session digest** job).
+Backend for a **career / profile chat** experience: a **FastAPI** service on **Cloud Run** that streams replies with **Vertex AI Gemini**, optional **Vertex RAG Engine** retrieval over a **GCS** corpus bucket, and optional **GCS-backed chat sessions** (with an optional **idle session digest** job).
 
-The public widget and marketing site live on **GitHub Pages** ([ak47.github.io](https://ak47.github.io)); this repository contains **Terraform**, the API source, ingestion tooling, and prompts.
+Pair this API with any static frontend (for example **GitHub Pages**). **`cors_allowed_origins`** is a **required** Terraform variable (no default); **`checks.tf`** also asserts **`gha_terraform_state_bucket`** matches **`terraform/backend.tf`** when you set the former. This repository contains **Terraform**, the API source, ingestion tooling, and prompts.
 
 ## Documentation
 
@@ -16,8 +16,6 @@ The public widget and marketing site live on **GitHub Pages** ([ak47.github.io](
 | [docs/session-digest.md](docs/session-digest.md) | Optional email transcript job (Workspace, Gmail API, Terraform variables) |
 | [docs/troubleshooting-gcp-auth.md](docs/troubleshooting-gcp-auth.md) | `invalid_grant` / ADC / Terraform provider auth |
 | [docs/observability.md](docs/observability.md) | Error monitoring + alerting (Cloud Logging, Error Reporting, Monitoring) |
-
-Product alignment notes (widget + Pages plan): [`ak47.github.io` / `docs/resume-bot-gcp-github-pages-plan.md`](https://github.com/ak47/ak47.github.io/blob/main/docs/resume-bot-gcp-github-pages-plan.md).
 
 ## Updating RAG knowledge in production
 
@@ -44,11 +42,12 @@ Run the API locally with variables from [`.env.example`](.env.example). Terrafor
 
 ## Deploy API to Cloud Run
 
-1. Apply Terraform in `terraform/` (creates buckets, RAG engine config, Artifact Registry, Cloud Run service, WIF for GitHub, etc.).
-2. Add the GitHub Actions **secrets** from `./scripts/print-github-actions-secrets.sh` (GCP WIF trio + **`TERRAFORM_TFVARS`** if you use [`.github/workflows/terraform.yml`](.github/workflows/terraform.yml)).
-3. Push to `main` (or run **Deploy API** manually); [.github/workflows/deploy-api.yml](.github/workflows/deploy-api.yml) builds `linux/amd64`, pushes the image, and updates the service.
+1. Apply Terraform in `terraform/` (creates buckets, RAG engine config, Artifact Registry, Cloud Run service, and optionally **WIF for GitHub** when **`github_repository`** is set in **`terraform.tfvars`**).
+2. Add the GitHub Actions **secrets** from `./scripts/print-github-actions-secrets.sh` once WIF outputs exist (**GCP** trio + **`TERRAFORM_TFVARS`** if you use [`.github/workflows/terraform.yml`](.github/workflows/terraform.yml)). If you left **`github_repository`** empty, use another deploy auth path (for example JSON keys) instead of those outputs.
+3. Set repository **Variable** **`CORS_ALLOWED_ORIGINS`** (comma-separated, same origins as Terraform **`cors_allowed_origins`**). **Deploy API** fails fast if it is missing so the workflow cannot drift to generic defaults.
+4. Push to `main` (or run **Deploy API** manually); [.github/workflows/deploy-api.yml](.github/workflows/deploy-api.yml) builds `linux/amd64`, pushes the image, and updates the service.
 
-Optional repository **Variables** (for example **`CORS_ALLOWED_ORIGINS`**; **`RAG_CORPUS_RESOURCE`** only if overriding Terraform on deploy) are described in `terraform/README.md` and [docs/architecture.md](docs/architecture.md). **Ingest RAG corpus** reads **`corpus_bucket_name`** and **`rag_corpus_resource_name`** from remote Terraform state — no separate `CORPUS_BUCKET_NAME` / `RAG_CORPUS_RESOURCE` variables for that workflow.
+Optional repository **Variables** (for example **`RAG_CORPUS_RESOURCE`** only if overriding Terraform on deploy) are described in `terraform/README.md` and [docs/architecture.md](docs/architecture.md). **Ingest RAG corpus** reads **`corpus_bucket_name`** and **`rag_corpus_resource_name`** from remote Terraform state — no separate `CORPUS_BUCKET_NAME` / `RAG_CORPUS_RESOURCE` variables for that workflow.
 
 **Region:** Default compute / primary Terraform region is **`us-central1`** ([terraform/variables.tf](terraform/variables.tf)). RAG ingest may use a different region if you configured `rag_corpus_ingest_region` (see [docs/rag-ingestion.md](docs/rag-ingestion.md)).
 
@@ -97,7 +96,7 @@ Details and tables: [terraform/README.md](terraform/README.md) and [docs/archite
 
 ## Optional: custom domain
 
-Set `cloud_run_custom_domain` in Terraform (see [terraform/README.md](terraform/README.md)). CORS is configured with `cors_allowed_origins`.
+Set `cloud_run_custom_domain` in Terraform (see [terraform/README.md](terraform/README.md)). CORS is configured with required variable **`cors_allowed_origins`** (and the **`CORS_ALLOWED_ORIGINS`** Actions variable on deploy).
 
 ## Terraform remote state
 

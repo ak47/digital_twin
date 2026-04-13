@@ -4,8 +4,11 @@
 # Details: README.md in this directory.
 #
 # project_id = "your-gcp-project-id"
-# github_repository = "ak47/digital_twin"   # default in variables.tf; override only for forks / no WIF
+# github_repository = "your-github-org/digital_twin"   # required for GitHub Actions WIF (see variables.tf default "")
 # region     = "us-central1"
+#
+# Required (no default in variables.tf):
+# cors_allowed_origins = ["https://your-frontend.example", "https://www.your-frontend.example"]
 #
 # Optional overrides:
 # name_prefix            = "digital-twin"
@@ -13,8 +16,7 @@
 # rag_engine_deployment_mode = "SERVERLESS"
 # rag_corpus_ingest_region = "europe-west4"   # backup if RAG in var.region is allowlist-blocked (must be "" if SERVERLESS)
 # session_retention_days = 3
-# cors_allowed_origins   = ["https://no-ego.net", "https://www.no-ego.net"]
-# cloud_run_custom_domain = "digital-twin.no-ego.net"   # optional; verify no-ego.net for GCP first
+# cloud_run_custom_domain = "api.example.com"   # optional; verify the base domain in GCP first
 # rag_corpus_resource_name = "projects/your-project/locations/us-central1/ragCorpora/your-corpus-id"
 #
 # Same bucket name as terraform/backend.tf — Ingest RAG + terraform.yml need remote state access:

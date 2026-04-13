@@ -22,7 +22,7 @@ def test_no_provider(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_gmail_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("GMAIL_DELEGATED_USER", "resume-bot@no-ego.net")
+    monkeypatch.setenv("GMAIL_DELEGATED_USER", "resume-bot@example.com")
     monkeypatch.setenv("GMAIL_SERVICE_ACCOUNT_JSON", '{"type": "service_account"}')
     reset_settings_cache()
     assert session_digest.digest_email_provider() == "gmail"

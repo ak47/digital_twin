@@ -1,4 +1,4 @@
-# GitHub Actions deployer SA + WIF. Default github_repository is ak47/digital_twin; set to "" to skip.
+# GitHub Actions deployer SA + WIF. Set var.github_repository (owner/name); empty string skips WIF.
 # After apply, set repo secrets from outputs github_actions_wif_provider and github_actions_deployer_email.
 
 locals {

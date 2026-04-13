@@ -3,7 +3,7 @@ FastAPI entrypoint for Cloud Run.
 
 Env (injected by Terraform / Cloud Run):
   PORT                    — Cloud Run sets this (default 8080 locally)
-  CORS_ALLOWED_ORIGINS    — comma-separated, e.g. https://no-ego.net,https://www.no-ego.net
+  CORS_ALLOWED_ORIGINS    — comma-separated browser origins (set from Terraform; required in Cloud Run)
   GCS_CORPUS_BUCKET       — corpus bucket (upload sources; import into a RAG corpus separately)
   RAG_CORPUS_RESOURCE     — full ragCorpora/... name; includes region (e.g. .../locations/us-central1/...).
                             Retrieval uses that region; Gemini still uses GCP_REGION (may differ if you use a backup RAG region).
@@ -45,11 +45,9 @@ setup_logging(level=logging.INFO)
 
 SESSION_HEADER = "X-Session-Id"
 
-# When CORS_ALLOWED_ORIGINS is unset/empty, use the same defaults as Terraform (widget on no-ego).
-_DEFAULT_CORS_ORIGINS = (
-    "https://no-ego.net",
-    "https://www.no-ego.net",
-)
+# When CORS_ALLOWED_ORIGINS is unset/empty, do not invent production origins (Terraform requires explicit cors_allowed_origins).
+# Local dev still gets localhost below; Cloud Run should always set CORS_ALLOWED_ORIGINS from Terraform.
+_DEFAULT_CORS_ORIGINS: tuple[str, ...] = ()
 
 # Always merged in so local Gatsby (`gatsby develop`, often :8000 / :8001) can call deployed API.
 _LOCAL_DEV_ORIGINS = (
@@ -76,10 +74,8 @@ def _cors_origins() -> list[str]:
     return base
 
 
-# Browsers send https://www.no-ego.net (no trailing slash). Terraform/CI must pass comma-separated
-# origins; gcloud --update-env-vars breaks on commas unless a custom delimiter is used (see deploy).
-# Regex covers apex + subdomains on no-ego.net so www works even if env is mis-set.
-_NO_EGO_ORIGIN_RE = r"^https://([a-z0-9-]+\.)*no-ego\.net$"
+# Terraform/CI pass comma-separated origins; gcloud --update-env-vars breaks on commas unless a
+# custom delimiter is used (see deploy workflow).
 
 app = FastAPI(title="digital-twin-api", version="0.2.0")
 
@@ -88,7 +84,6 @@ if _origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_origins,
-        allow_origin_regex=_NO_EGO_ORIGIN_RE,
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],

@@ -47,18 +47,27 @@ variable "rag_corpus_resource_name" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Origins allowed by the Cloud Run API (mirrors no-ego.net site)."
+  description = <<-EOT
+    Origins allowed by the Cloud Run API (browser CORS). Required — no default — so applies never silently use example.com.
+    Must match what you pass as CORS_ALLOWED_ORIGINS on deploy (e.g. GitHub Actions Variable). Include every real frontend origin.
+  EOT
   type        = list(string)
-  default = [
-    "https://no-ego.net",
-    "https://www.no-ego.net",
-  ]
+
+  validation {
+    condition     = length(var.cors_allowed_origins) > 0
+    error_message = "cors_allowed_origins must contain at least one origin."
+  }
+
+  validation {
+    condition     = alltrue([for o in var.cors_allowed_origins : length(trimspace(o)) > 0])
+    error_message = "Each cors_allowed_origins entry must be a non-empty string."
+  }
 }
 
 variable "cloud_run_custom_domain" {
   description = <<-EOT
-    Full hostname to map to the API service (e.g. digital-twin.no-ego.net). Empty string skips this resource.
-    The registrable domain (e.g. no-ego.net) must be verified for this GCP project before apply succeeds.
+    Full hostname to map to the API service (e.g. api.example.com). Empty string skips this resource.
+    The registrable domain (e.g. example.com) must be verified for this GCP project before apply succeeds.
     After apply, create the DNS records from output cloud_run_custom_domain_dns_records; TLS may take extra minutes.
   EOT
   type        = string
@@ -111,9 +120,9 @@ variable "rag_corpus_ingest_region" {
 }
 
 variable "github_repository" {
-  description = "GitHub repo allowed to deploy via OIDC (owner/name). This project uses ak47/digital_twin. Set to \"\" to skip WIF + deployer SA (forks / JSON-key deploy only)."
+  description = "GitHub repo allowed to deploy via OIDC (owner/name). Set to your fork (e.g. my-org/digital_twin) or \"\" to skip WIF + deployer SA (JSON-key deploy only)."
   type        = string
-  default     = "ak47/digital_twin"
+  default     = ""
 
   validation {
     condition     = var.github_repository == "" || can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))

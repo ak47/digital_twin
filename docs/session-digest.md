@@ -8,9 +8,9 @@ When **GCS sessions** are enabled, you can send a **plain-text attachment** of e
 
 **Subject:** `resume bot chat YYYY-MM-DD HH:MM PST` (or PDT) — **US Pacific** by default (`RESUME_BOT_DIGEST_TIMEZONE`, default `America/Los_Angeles`). The body is short; the thread is in the `.txt` attachment.
 
-## Google Workspace (no-ego.net)
+## Google Workspace (example.com)
 
-1. **Workspace:** Create or choose a mailbox to send from, e.g. **`resume-bot@no-ego.net`**.
+1. **Workspace:** Create or choose a mailbox to send from, e.g. **`resume-bot@example.com`**.
 2. **GCP:** [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com) is enabled by Terraform when using this stack ([`terraform/apis.tf`](../terraform/apis.tf)).
 3. **Service account:** Create one in GCP → **IAM & Admin** → **Service accounts** → enable **Domain-wide delegation** (Google Workspace). Note the **numeric Client ID** (console or `client_id` in the JSON key).
 4. **Workspace Admin** (admin.google.com) → **Security** → **Access and data control** → **API controls** → **Domain-wide delegation** → **Add new**:
@@ -38,7 +38,7 @@ When **GCS sessions** are enabled, you can send a **plain-text attachment** of e
 
 ```bash
 export GMAIL_SERVICE_ACCOUNT_KEY_FILE=/path/to/sa.json
-export GMAIL_DELEGATED_USER='resume-bot@no-ego.net'
+export GMAIL_DELEGATED_USER='resume-bot@example.com'
 export RESUME_BOT_DIGEST_EMAIL_TO='you@example.com'
 export GCS_SESSIONS_BUCKET='your-sessions-bucket'
 uv run python -m digital_twin.run_session_digest

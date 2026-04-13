@@ -1,5 +1,5 @@
 # Optional: map a verified hostname to the API Cloud Run service (same as Console → Custom domains).
-# Set var.cloud_run_custom_domain (e.g. digital-twin.no-ego.net). The registrable domain must be
+# Set var.cloud_run_custom_domain (e.g. api.example.com). The registrable domain must be
 # verified for this GCP project first (Search Console or `gcloud domains verify`).
 
 resource "google_cloud_run_domain_mapping" "api" {

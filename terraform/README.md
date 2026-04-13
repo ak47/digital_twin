@@ -1,6 +1,6 @@
 # Terraform — digital_twin
 
-**Backend:** **`terraform/backend.tf`** is **committed** and points at **GCS remote state** so clones and **GitHub Actions** run `terraform init` against the same bucket. Forks that need a different bucket must replace that file locally (do not push) or use a branch-specific backend. To bootstrap from **local state** once, see **[GCS remote state](#gcs-remote-state-dedicated-bucket)** and **`terraform init -migrate-state`**.
+**Backend:** **`terraform/backend.tf`** is **committed** with a **placeholder** GCS bucket name (`YOUR_UNIQUE_TF_STATE_BUCKET`). Replace **`bucket`** with your real globally unique state bucket before **`terraform init`** (see **[GCS remote state](#gcs-remote-state-dedicated-bucket)**). Forks can also copy **`backend.tf.example`**. **`terraform init -migrate-state`** moves existing local state into the bucket when you adopt remote state.
 
 ## Minimal flow
 
@@ -19,7 +19,7 @@
 
    **Remote state:** see **[GCS remote state](#gcs-remote-state-dedicated-bucket)** below.
 
-3. **Apply** (creates GCP resources; GitHub deploy wiring defaults to repo `ak47/digital_twin`):
+3. **Apply** (creates GCP resources). Set **`github_repository`** in **`terraform.tfvars`** to **`owner/name`** when you want GitHub Actions OIDC (WIF); leave default **`""`** to skip the deployer SA until you are ready.
 
    ```bash
    terraform apply
@@ -37,18 +37,7 @@
 
 ### 409: resource already exists
 
-If Terraform tries to **create** something that is already in GCP (e.g. after **migrating state** to a new bucket, or a partial apply), you **import** the live object into state instead of creating it.
-
-From repo root:
-
-```bash
-export TF_VAR_project_id="YOUR_PROJECT_ID"
-./scripts/import-existing-terraform-resources.sh        # phase1 + phase2 (full set)
-# If you already imported phase1 and a partial apply failed later:
-./scripts/import-existing-terraform-resources.sh phase2
-```
-
-**Phase 2** covers **409** on **`google_cloud_run_v2_service.api`**, **`google_cloud_run_v2_job.session_digest`**, and **`google_iam_workload_identity_pool_provider.github`** (Cloud Run + OIDC provider already exist in GCP).
+If Terraform tries to **create** something that is already in GCP (e.g. after **migrating state** to a new bucket, or a partial apply), **import** the live object into state instead of creating it. Use **`terraform import`** with the resource address and the provider’s expected id (see the Terraform Google provider docs for each resource type).
 
 Then **`terraform plan`** in **`terraform/`**. If **`google_cloud_run_domain_mapping`** returns **409** (custom domain already mapped), import:
 
@@ -58,7 +47,7 @@ terraform import 'google_cloud_run_domain_mapping.api[0]' \
   "locations/${REGION}/namespaces/YOUR_PROJECT_ID/domainmappings/YOUR_HOSTNAME"
 ```
 
-(Hostname is your **`cloud_run_custom_domain`**, e.g. **`digital-twin.no-ego.net`**; **`REGION`** is **`var.region`**, default **`us-central1`**.) Repeat for any other **409** with the matching **`terraform import`** id from the provider docs.
+(Hostname is your **`cloud_run_custom_domain`**, e.g. **`api.example.com`**; **`REGION`** is **`var.region`**, default **`us-central1`**.) Repeat for any other **409** with the matching **`terraform import`** id from the provider docs.
 
 ### GitHub Actions Terraform
 
@@ -78,9 +67,9 @@ Run infrastructure from GitHub so you do not need a laptop with `gcloud`/`terraf
 
 ### Custom domain on the API (Terraform)
 
-Set **`cloud_run_custom_domain`** (e.g. `digital-twin.no-ego.net`) in **`terraform.tfvars`**. Terraform creates **`google_cloud_run_domain_mapping`** to route that hostname to **`${name_prefix}-api`** in **`var.region`**.
+Set **`cloud_run_custom_domain`** (e.g. `api.example.com`) in **`terraform.tfvars`**. Terraform creates **`google_cloud_run_domain_mapping`** to route that hostname to **`${name_prefix}-api`** in **`var.region`**.
 
-**Before apply:** verify **ownership of the base domain** (e.g. `no-ego.net`) for this GCP project — [Search Console](https://search.google.com/search-console) or `gcloud domains verify`.
+**Before apply:** verify **ownership of the base domain** (e.g. `example.com`) for this GCP project — [Search Console](https://search.google.com/search-console) or `gcloud domains verify`.
 
 **After apply:** run **`terraform output cloud_run_custom_domain_dns_records`** and add every record at your DNS host. Then check **`curl -sS "https://<hostname>/health"`** returns **`{"status":"ok"}`** (not HTML).
 
@@ -90,7 +79,7 @@ If the mapping already exists in GCP, import it before managing with Terraform:
 terraform import 'google_cloud_run_domain_mapping.api[0]' locations/REGION/namespaces/PROJECT_ID/domainmappings/HOSTNAME
 ```
 
-Example: `locations/us-central1/namespaces/my-proj/domainmappings/digital-twin.no-ego.net`
+Example: `locations/us-central1/namespaces/my-proj/domainmappings/api.example.com`
 
 ### GCS remote state (dedicated bucket)
 

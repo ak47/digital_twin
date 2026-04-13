@@ -39,3 +39,4 @@ src/digital_twin/prompts/Profile.pdf
 .DS_Store
 .idea/
 .vscode/
+.cursor/

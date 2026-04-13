@@ -51,6 +51,17 @@ jobs:
 
       # google-github-actions/auth requires a non-empty workload_identity_provider.
       # If any of these are unset, the action fails opaquely — fail here with a clear message.
+      - name: Check CORS repository variable
+        env:
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+        run: |
+          if [ -z "${CORS_ALLOWED_ORIGINS}" ]; then
+            echo "::error::Repository Variable CORS_ALLOWED_ORIGINS is unset or empty."
+            echo "Set it under Settings → Secrets and variables → Actions → Variables."
+            echo "Use the same comma-separated origins as Terraform variable cors_allowed_origins (see terraform/variables.tf)."
+            exit 1
+          fi
+
       - name: Check GCP Action secrets
         env:
           GCP_WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -110,10 +121,10 @@ jobs:
           GEMINI_TEMPERATURE: ${{ vars.GEMINI_TEMPERATURE }}
         run: |
           set -eu
-          # Default gcloud --update-env-vars splits on commas between KEY=value pairs, so
+          # gcloud --update-env-vars splits on commas between KEY=value pairs, so
           # CORS_ALLOWED_ORIGINS=https://a,https://b cannot use the comma form. Custom delimiter ^;^
-          # keeps one env value with commas inside.
-          CORS="${CORS_ALLOWED_ORIGINS:-https://no-ego.net,https://www.no-ego.net}"
+          # keeps one env value with commas inside. Origins must match Terraform cors_allowed_origins.
+          CORS="${CORS_ALLOWED_ORIGINS}"
           EXTRA=""
           if [ -n "${RAG_CORPUS_RESOURCE}" ]; then
             EXTRA=";RAG_CORPUS_RESOURCE=${RAG_CORPUS_RESOURCE}"

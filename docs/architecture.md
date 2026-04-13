@@ -1,13 +1,13 @@
 # Architecture
 
-This document describes how the **digital-twin-api** service fits into the no-ego stack, what it depends on at runtime, and how changes reach production.
+This document describes how the **digital-twin-api** service fits into the surrounding frontend and GCP stack, what it depends on at runtime, and how changes reach production.
 
 ## System context
 
 ```mermaid
 flowchart TB
     subgraph clients["Clients"]
-        Web["no-ego.net widget\n(Gatsby site)"]
+        Web["Static site / widget\n(e.g. GitHub Pages)"]
         Dev["Local dev\n(localhost:8000/8001)"]
     end
 

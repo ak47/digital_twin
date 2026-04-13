@@ -55,7 +55,7 @@ output "cors_allowed_origins" {
 }
 
 output "cloud_run_uri" {
-  description = "HTTPS URL for the API (map digital_twin.no-ego.net here)."
+  description = "HTTPS URL for the API (map your custom hostname here when using cloud_run_custom_domain)."
   value       = google_cloud_run_v2_service.api.uri
 }
 

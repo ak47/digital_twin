@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # When RAG is configured but retrieval returns no chunks, the model must not fill gaps from priors.
 _RAG_EMPTY_RETRIEVAL_BLOCK = """## Retrieved documents (RAG)
 
-**No passages were retrieved for this query.** Do not invent or infer Andrew's projects, employers, dates, skills, hobbies, home lab, infrastructure, tools, or other biographical facts. Say that the materials do not cover this, or suggest the user rephrase."""
+**No passages were retrieved for this query.** Do not invent or infer biographical facts (projects, employers, dates, skills, hobbies, infrastructure, tools, or similar) not supported by retrieved materials. Say that the materials do not cover this, or suggest the user rephrase."""
 
 
 def gemini_model_id() -> str:
@@ -73,7 +73,7 @@ def _load_system_instruction() -> str:
             base = f.read().strip()
     except OSError:
         base = (
-            "You answer as Andrew in the first person (I, me, my). Only state facts "
+            "You answer in the first person (I, me, my). Only state facts "
             "supported by Retrieved documents (RAG) in the system message; cite sources; "
             "do not invent facts. Be concise."
         )
