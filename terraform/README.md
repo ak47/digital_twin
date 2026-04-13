@@ -4,11 +4,13 @@
 
 ## Minimal flow
 
-1. **One env var** (or use gitignored `terraform.tfvars` with `project_id = "..."`):
+1. **Env var and gitignored `terraform.tfvars`** — at minimum set **`project_id`** and required **`cors_allowed_origins`** (see **`terraform.tfvars.example`**). Example:
 
    ```bash
    export TF_VAR_project_id="YOUR_PROJECT_ID"
    ```
+
+   **`cors_allowed_origins`** has **no default** in **`variables.tf`** so you never apply with accidental example origins. When **`gha_terraform_state_bucket`** is set, **`checks.tf`** requires it to match **`bucket`** in **`backend.tf`** exactly.
 
 2. **Init** (first time / new clone):
 
