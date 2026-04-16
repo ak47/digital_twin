@@ -5,8 +5,8 @@
 # stay aligned with Cloud Run — no duplicate GitHub Variables (CORPUS_BUCKET_NAME / RAG_CORPUS_RESOURCE).
 #
 # Secrets: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID (same as Deploy API).
-# Terraform: set gha_terraform_state_bucket in tfvars to the same GCS bucket as backend.tf, then
-# terraform apply (grants the GitHub deploy SA storage.objectViewer on the state bucket for terraform init).
+# Terraform: set gha_terraform_state_bucket in tfvars + TF_STATE_BUCKET repo Variable to the same state bucket,
+# then terraform apply (grants the GitHub deploy SA storage.objectViewer for terraform init/output).
 #
 # The ingest script skips RagEngineConfig GET for existing corpora so the SA need not have
 # aiplatform.ragEngineConfigs.get. rag.import_files requires aiplatform.ragFiles.import plus corpus
@@ -40,13 +40,15 @@ jobs:
           GCP_WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_SA_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
         run: |
           missing=""
           [ -z "${GCP_WIF_PROVIDER}" ] && missing="${missing} GCP_WORKLOAD_IDENTITY_PROVIDER"
           [ -z "${GCP_SA_EMAIL}" ] && missing="${missing} GCP_SERVICE_ACCOUNT_EMAIL"
           [ -z "${GCP_PROJECT_ID}" ] && missing="${missing} GCP_PROJECT_ID"
+          [ -z "${TF_STATE_BUCKET}" ] && missing="${missing} TF_STATE_BUCKET (repo variable)"
           if [ -n "${missing}" ]; then
-            echo "::error::Missing secrets:${missing}"
+            echo "::error::Missing secrets/variables:${missing}"
             exit 1
           fi
 
@@ -143,10 +145,11 @@ jobs:
       - name: Terraform init & ingest
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
         run: |
           set -eu
           cd terraform
-          terraform init -input=false -no-color
+          terraform init -input=false -no-color -backend-config="bucket=${TF_STATE_BUCKET}"
           BUCKET="$(terraform output -raw corpus_bucket_name)"
           CORPUS="$(terraform output -raw rag_corpus_resource_name)"
           cd ..

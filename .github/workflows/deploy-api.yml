@@ -119,6 +119,8 @@ jobs:
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           GEMINI_LOCATION: ${{ vars.GEMINI_LOCATION }}
           GEMINI_TEMPERATURE: ${{ vars.GEMINI_TEMPERATURE }}
+          # Metrics label: Terraform sets this on the service; CI can override via repo Variable.
+          RAG_ENGINE_DEPLOYMENT_MODE: ${{ vars.RAG_ENGINE_DEPLOYMENT_MODE }}
         run: |
           set -eu
           # gcloud --update-env-vars splits on commas between KEY=value pairs, so
@@ -137,6 +139,9 @@ jobs:
           fi
           if [ -n "${GEMINI_TEMPERATURE:-}" ]; then
             EXTRA="${EXTRA};GEMINI_TEMPERATURE=${GEMINI_TEMPERATURE}"
+          fi
+          if [ -n "${RAG_ENGINE_DEPLOYMENT_MODE:-}" ]; then
+            EXTRA="${EXTRA};RAG_ENGINE_DEPLOYMENT_MODE=${RAG_ENGINE_DEPLOYMENT_MODE}"
           fi
           gcloud run services update "${SERVICE}" \
             --project="${PROJECT_ID}" \

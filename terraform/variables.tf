@@ -132,7 +132,7 @@ variable "github_repository" {
 
 variable "gha_terraform_state_bucket" {
   description = <<-EOT
-    GCS bucket from terraform/backend.tf that holds remote state. When non-empty and GitHub WIF is enabled,
+    GCS bucket used for Terraform remote state (`terraform init -backend-config="bucket=..."`). When non-empty and GitHub WIF is enabled,
     grants the GitHub deploy SA storage access for terraform init. Use roles/storage.objectViewer when
     github_actions_terraform_roles is empty (ingest + plan read-only); objectAdmin when non-empty (apply writes state).
   EOT

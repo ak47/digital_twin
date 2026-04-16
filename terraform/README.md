@@ -1,6 +1,6 @@
 # Terraform — digital_twin
 
-**Backend:** **`terraform/backend.tf`** is **committed** with a **placeholder** GCS bucket name (`YOUR_UNIQUE_TF_STATE_BUCKET`). Replace **`bucket`** with your real globally unique state bucket before **`terraform init`** (see **[GCS remote state](#gcs-remote-state-dedicated-bucket)**). Forks can also copy **`backend.tf.example`**. **`terraform init -migrate-state`** moves existing local state into the bucket when you adopt remote state.
+**Backend:** **`terraform/backend.tf`** commits shared GCS backend settings (`prefix`) and expects bucket injection per environment. Set **`TF_STATE_BUCKET`** and run **`terraform init -backend-config="bucket=${TF_STATE_BUCKET}"`** (see **[GCS remote state](#gcs-remote-state-dedicated-bucket)**). **`terraform init -migrate-state`** moves existing local state into that bucket when you adopt remote state.
 
 ## Minimal flow
 
@@ -10,13 +10,14 @@
    export TF_VAR_project_id="YOUR_PROJECT_ID"
    ```
 
-   **`cors_allowed_origins`** has **no default** in **`variables.tf`** so you never apply with accidental example origins. When **`gha_terraform_state_bucket`** is set, **`checks.tf`** requires it to match **`bucket`** in **`backend.tf`** exactly.
+   **`cors_allowed_origins`** has **no default** in **`variables.tf`** so you never apply with accidental example origins. When **`gha_terraform_state_bucket`** is set, keep it equal to your backend bucket (**`TF_STATE_BUCKET`**) so CI IAM and backend init point at the same state.
 
 2. **Init** (first time / new clone):
 
    ```bash
    cd terraform
-   terraform init
+   export TF_STATE_BUCKET="YOUR_UNIQUE_TF_STATE_BUCKET"
+   terraform init -backend-config="bucket=${TF_STATE_BUCKET}"
    ```
 
    **Remote state:** see **[GCS remote state](#gcs-remote-state-dedicated-bucket)** below.
@@ -61,7 +62,7 @@ Run infrastructure from GitHub so you do not need a laptop with `gcloud`/`terraf
    ```
    (Or paste in the GitHub UI.) This file is sensitive; never commit it.
 
-2. **IAM** — in **`terraform.tfvars`** set **`gha_terraform_state_bucket`** to the **same** bucket as **`backend.tf`**, and (for apply from Actions) **`github_actions_terraform_roles`** as above. After the **first** successful apply with those variables (from your laptop or **Actions → Terraform → Run workflow → apply**), the GitHub deploy service account has **read/write** on remote state and project roles. These roles are broad by design; use a **dedicated GCP project** for this stack.
+2. **IAM** — in **`terraform.tfvars`** set **`gha_terraform_state_bucket`** to the **same** bucket as repository variable **`TF_STATE_BUCKET`**, and (for apply from Actions) **`github_actions_terraform_roles`** as above. After the **first** successful apply with those variables (from your laptop or **Actions → Terraform → Run workflow → apply**), the GitHub deploy service account has **read/write** on remote state and project roles. These roles are broad by design; use a **dedicated GCP project** for this stack.
 
 3. **Workflow** — [`.github/workflows/terraform.yml`](../.github/workflows/terraform.yml): on PR / `main` push it runs **`fmt -check`**, **`validate`**, **`plan`**. To **apply**, open **Actions → Terraform → Run workflow**, check **apply**, and run. **Concurrency** is one run per repo so applies do not overlap.
 
@@ -113,27 +114,32 @@ Use a **separate** bucket from the RAG corpus bucket. State bucket name must be 
 
    For a **service account**, use `--member="serviceAccount:${TERRAFORM_ACTOR}"` instead.
 
-3. **Wire Terraform** — **`backend.tf`** in this directory already sets **`bucket`** / **`prefix`** for this project. Change the bucket name there only when you intentionally use a different state bucket (and keep **`gha_terraform_state_bucket`** in sync).
+3. **Wire Terraform** — keep **`terraform/backend.tf`** unchanged and pass bucket at init time:
+
+   ```bash
+   export TF_STATE_BUCKET="YOUR_UNIQUE_TF_STATE_BUCKET"
+   terraform init -reconfigure -backend-config="bucket=${TF_STATE_BUCKET}"
+   ```
 
 4. **Migrate existing local state** (one time per working copy that already has `terraform.tfstate`):
 
    ```bash
    rm -rf .terraform
-   terraform init -migrate-state
+   terraform init -migrate-state -backend-config="bucket=${TF_STATE_BUCKET}"
    ```
 
    Answer **`yes`** when Terraform asks to copy state to GCS. After that, **`terraform.tfstate`** in this directory is no longer used; back up or delete it only after you confirm **`terraform state list`** works from a **fresh** `terraform init` on another machine.
 
-5. **New clone** (no local state): **`terraform init`** (no `-migrate-state`).
+5. **New clone** (no local state): **`terraform init -backend-config="bucket=${TF_STATE_BUCKET}"`** (no `-migrate-state`).
 
 ### Renaming the state bucket (e.g. typo fix)
 
 GCS **cannot** rename a bucket. To move state from **`digital-twien-terraform-state`** (or any old name) to **`digital-twin-terraform-state`**:
 
-1. **Create** the new bucket (versioning + uniform access) in the same GCP project — same **`gcloud storage buckets create`** / **`update --versioning`** steps as in [GCS remote state](#gcs-remote-state-dedicated-bucket), with the **new** name. If **`digital-twin-terraform-state`** is already taken globally, pick another unique name and use it in both **`backend.tf`** and **`gha_terraform_state_bucket`**.
-2. **Grant** identities that will run **`terraform init -migrate-state`** **`roles/storage.objectAdmin`** on the **new** bucket (your user or bootstrap SA). The GitHub deploy SA already has **`objectAdmin`** on the **old** bucket from Terraform; add the same on the **new** bucket (temporary **`gcloud storage buckets add-iam-policy-binding`** is fine) so CI can use the new backend after you switch **`backend.tf`**.
-3. Update **`terraform/backend.tf`** and **`gha_terraform_state_bucket`** in **`terraform.tfvars`** to the new name; refresh repository secret **`TERRAFORM_TFVARS`**.
-4. From a machine with **read** access to the **old** state and **write** access to the **new** bucket: **`cd terraform`**, **`rm -rf .terraform`**, **`terraform init -migrate-state`**, confirm copying state into the new backend when prompted. Then **`terraform plan`** — expect at most IAM updates for the state-bucket binding until you **apply**.
+1. **Create** the new bucket (versioning + uniform access) in the same GCP project — same **`gcloud storage buckets create`** / **`update --versioning`** steps as in [GCS remote state](#gcs-remote-state-dedicated-bucket), with the **new** name. If **`digital-twin-terraform-state`** is already taken globally, pick another unique name and use it for both **`TF_STATE_BUCKET`** and **`gha_terraform_state_bucket`**.
+2. **Grant** identities that will run **`terraform init -migrate-state`** **`roles/storage.objectAdmin`** on the **new** bucket (your user or bootstrap SA). The GitHub deploy SA already has **`objectAdmin`** on the **old** bucket from Terraform; add the same on the **new** bucket (temporary **`gcloud storage buckets add-iam-policy-binding`** is fine) so CI can use the new backend after you switch.
+3. Update **`TF_STATE_BUCKET`** (local env + GitHub repository Variable) and **`gha_terraform_state_bucket`** in **`terraform.tfvars`** to the new name; refresh repository secret **`TERRAFORM_TFVARS`**.
+4. From a machine with **read** access to the **old** state and **write** access to the **new** bucket: **`cd terraform`**, **`rm -rf .terraform`**, **`terraform init -migrate-state -backend-config="bucket=${TF_STATE_BUCKET}"`**, confirm copying state into the new backend when prompted. Then **`terraform plan`** — expect at most IAM updates for the state-bucket binding until you **apply**.
 5. **Apply** (GitHub Actions **Terraform** workflow with **apply**, or local) so **`google_storage_bucket_iam_member.github_deploy_terraform_state_access`** attaches to the **new** bucket.
 6. When satisfied, empty and delete the **old** bucket.
 
@@ -188,7 +194,7 @@ Google may block **RAG Engine** in `us-central1` for new projects until allowlis
 
 **Re-import into the same corpus** (after upload to `rag-sources/`): with **`--skip-upload`**, the script imports the **whole** `gs://<bucket>/rag-sources/` prefix; pass any **`--files`** value to satisfy the CLI (the workflow uses a placeholder). Example:  
 `uv run python scripts/ingest_rag_corpus.py --project-id … --corpus-resource-name 'projects/…/ragCorpora/…' --skip-upload --files .`  
-Or use GitHub Actions **Ingest RAG corpus** (see **`.github/workflows/ingest-rag-corpus.yml`**): it runs **`terraform init`** / **`terraform output`** for **`corpus_bucket_name`** and **`rag_corpus_resource_name`** so bucket + corpus stay aligned with **`terraform.tfvars`** / Cloud Run — set **`gha_terraform_state_bucket`** (same name as **`backend.tf`**) and **`terraform apply`** so the deploy SA can read state (**`github_deploy_terraform_state_viewer`**). Repository **Secrets** **`GCP_PROJECT_ID`**, **`GCP_SERVICE_ACCOUNT_EMAIL`**, and **`GCP_WORKLOAD_IDENTITY_PROVIDER`** must refer to the **same** project as the corpus (use **`terraform output -raw github_actions_deployer_email`** and **`project_id_for_github`**). Terraform also grants **`roles/aiplatform.user`** and corpus-bucket **`roles/storage.objectViewer`** (**`github_deploy_vertex_user`**, **`corpus_github_deploy_object_viewer`**). If **`aiplatform.ragFiles.import` denied**, fix secrets or IAM on the token’s SA.
+Or use GitHub Actions **Ingest RAG corpus** (see **`.github/workflows/ingest-rag-corpus.yml`**): it runs **`terraform init`** / **`terraform output`** for **`corpus_bucket_name`** and **`rag_corpus_resource_name`** so bucket + corpus stay aligned with **`terraform.tfvars`** / Cloud Run — set both **`gha_terraform_state_bucket`** and repository Variable **`TF_STATE_BUCKET`** to the same bucket, then **`terraform apply`** so the deploy SA can read state (**`github_deploy_terraform_state_viewer`**). Repository **Secrets** **`GCP_PROJECT_ID`**, **`GCP_SERVICE_ACCOUNT_EMAIL`**, and **`GCP_WORKLOAD_IDENTITY_PROVIDER`** must refer to the **same** project as the corpus (use **`terraform output -raw github_actions_deployer_email`** and **`project_id_for_github`**). Terraform also grants **`roles/aiplatform.user`** and corpus-bucket **`roles/storage.objectViewer`** (**`github_deploy_vertex_user`**, **`corpus_github_deploy_object_viewer`**). If **`aiplatform.ragFiles.import` denied**, fix secrets or IAM on the token’s SA.
 
 3. **Wire Cloud Run** with the printed resource name:
 

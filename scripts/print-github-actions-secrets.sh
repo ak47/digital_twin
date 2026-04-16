@@ -9,7 +9,8 @@ cd "${REPO_ROOT}/terraform"
 
 if [ -z "$(terraform state list 2>/dev/null || true)" ]; then
   echo "No Terraform state (nothing applied yet, or init/backend failed). Run:" >&2
-  echo "  cd terraform && terraform init -reconfigure && terraform plan && terraform apply" >&2
+  echo "  export TF_STATE_BUCKET='your-terraform-state-bucket'" >&2
+  echo "  cd terraform && terraform init -reconfigure -backend-config=\"bucket=\${TF_STATE_BUCKET}\" && terraform plan && terraform apply" >&2
   exit 1
 fi
 
@@ -30,10 +31,18 @@ echo ""
 echo "TERRAFORM_TFVARS  (create as secret: full file body for terraform.yml)"
 echo "  gh secret set TERRAFORM_TFVARS < terraform/terraform.tfvars"
 echo ""
+echo "TF_STATE_BUCKET  (create as repository variable)"
+state_bucket="$(awk -F= '/^[[:space:]]*gha_terraform_state_bucket[[:space:]]*=/{v=$2} END{gsub(/["[:space:]]/, "", v); print v}' terraform.tfvars 2>/dev/null || true)"
+if [ -n "${state_bucket}" ]; then
+  echo "  gh variable set TF_STATE_BUCKET --body \"${state_bucket}\""
+else
+  echo "  gh variable set TF_STATE_BUCKET --body \"<same value as gha_terraform_state_bucket in terraform.tfvars>\""
+fi
+echo ""
 echo "=== Ingest RAG corpus workflow (no extra GitHub Variables) ==="
 echo "Bucket + RagCorpus come from terraform output (remote state)."
-echo "Set in terraform.tfvars: gha_terraform_state_bucket = same GCS bucket as terraform/backend.tf"
-echo "then terraform apply so the GitHub deploy SA can run terraform init in CI."
+echo "Set in terraform.tfvars: gha_terraform_state_bucket = same value as TF_STATE_BUCKET"
+echo "then terraform apply so the GitHub deploy SA can run terraform init/output in CI."
 echo ""
 echo "corpus_bucket_name (reference)"
 terraform output -raw corpus_bucket_name

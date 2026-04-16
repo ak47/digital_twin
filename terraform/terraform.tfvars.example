@@ -19,7 +19,7 @@
 # cloud_run_custom_domain = "api.example.com"   # optional; verify the base domain in GCP first
 # rag_corpus_resource_name = "projects/your-project/locations/us-central1/ragCorpora/your-corpus-id"
 #
-# Same bucket name as terraform/backend.tf — Ingest RAG + terraform.yml need remote state access:
+# Same value as TF_STATE_BUCKET (backend init bucket) — Ingest RAG + terraform.yml need remote state access:
 # gha_terraform_state_bucket = "your-terraform-state-bucket"
 #
 # Let GitHub Actions run terraform plan/apply (.github/workflows/terraform.yml); bootstrap with one local apply:

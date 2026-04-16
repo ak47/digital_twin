@@ -4,7 +4,7 @@
 
 Backend for a **career / profile chat** experience: a **FastAPI** service on **Cloud Run** that streams replies with **Vertex AI Gemini**, optional **Vertex RAG Engine** retrieval over a **GCS** corpus bucket, and optional **GCS-backed chat sessions** (with an optional **idle session digest** job).
 
-Pair this API with any static frontend (for example **GitHub Pages**). **`cors_allowed_origins`** is a **required** Terraform variable (no default); **`checks.tf`** also asserts **`gha_terraform_state_bucket`** matches **`terraform/backend.tf`** when you set the former. This repository contains **Terraform**, the API source, ingestion tooling, and prompts.
+Pair this API with any static frontend (for example **GitHub Pages**). **`cors_allowed_origins`** is a **required** Terraform variable (no default); set **`gha_terraform_state_bucket`** to the same value as backend init bucket (**`TF_STATE_BUCKET`**) so Terraform IAM and CI state access stay aligned. This repository contains **Terraform**, the API source, ingestion tooling, and prompts.
 
 ## Documentation
 
@@ -100,4 +100,4 @@ Set `cloud_run_custom_domain` in Terraform (see [terraform/README.md](terraform/
 
 ## Terraform remote state
 
-[terraform/backend.tf](terraform/backend.tf) configures a **GCS** backend (tracked so **GitHub Actions** and local runs share state). Create the bucket and migrate once if needed — see [terraform/README.md](terraform/README.md). Use a **dedicated** state bucket, not the RAG corpus bucket. [terraform/backend.tf.example](terraform/backend.tf.example) is a template for forks.
+[terraform/backend.tf](terraform/backend.tf) configures shared **GCS** backend settings; provide the bucket at init time with `terraform init -backend-config="bucket=${TF_STATE_BUCKET}"` (same for GitHub Actions via repository Variable `TF_STATE_BUCKET`). Create the bucket and migrate once if needed — see [terraform/README.md](terraform/README.md). Use a **dedicated** state bucket, not the RAG corpus bucket. [terraform/backend.tf.example](terraform/backend.tf.example) is an optional full-backend template.
