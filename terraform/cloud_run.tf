@@ -68,6 +68,11 @@ resource "google_cloud_run_v2_service" "api" {
         value = tostring(var.max_output_tokens)
       }
 
+      env {
+        name  = "RAG_ENGINE_DEPLOYMENT_MODE"
+        value = var.rag_engine_deployment_mode
+      }
+
       dynamic "env" {
         for_each = var.rag_corpus_resource_name != "" ? [1] : []
         content {

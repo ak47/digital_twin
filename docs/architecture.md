@@ -67,7 +67,7 @@ flowchart TB
 - **Two regions**: **Gemini** uses **`GCP_REGION`** (default `us-central1` on Cloud Run). **Retrieval** initializes Vertex in the **location embedded in `RAG_CORPUS_RESOURCE`** (e.g. `.../locations/europe-west4/ragCorpora/...` when using a backup ingest region). See `rag_vertex.py` and `terraform/README.md` (RAG backup region).
 - **Tuning**: **`RAG_TOP_K`**, optional **`RAG_VECTOR_DISTANCE_THRESHOLD`** (see `main.py` / `.env.example`).
 - **`RAG_CORPUS_RESOURCE` on Cloud Run**: Set via Terraform **`rag_corpus_resource_name`** → env on the service (source of truth). **Deploy API** may pass repository **Variable** `RAG_CORPUS_RESOURCE` only as an intentional override; leave unset to avoid drifting from Terraform. **Ingest RAG corpus** reads **`rag_corpus_resource_name`** from remote Terraform state (with **`gha_terraform_state_bucket`** IAM), not from extra GitHub Variables.
-- **Terraform remote state**: **GCS** backend in committed `terraform/backend.tf` (same bucket as `gha_terraform_state_bucket`); see `terraform/README.md`. `terraform/backend.tf.example` is a fork template.
+- **Terraform remote state**: **GCS** backend with bucket injected at init (`terraform init -backend-config="bucket=..."`). Keep repository Variable `TF_STATE_BUCKET` equal to `gha_terraform_state_bucket`; see `terraform/README.md`. `terraform/backend.tf.example` is an optional full-backend template.
 
 ## Deployment pipeline (API image)
 
@@ -152,7 +152,7 @@ flowchart LR
     end
 ```
 
-- **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Same **secrets** as Deploy API; **`terraform init`** / **`terraform output`** supply **`corpus_bucket_name`** and **`rag_corpus_resource_name`** (set **`gha_terraform_state_bucket`** + apply for state-bucket IAM). Then **`ingest_rag_corpus.py`** with **`--skip-upload`** imports the **entire** `gs://<bucket>/rag-sources/` prefix; **`--files`** only satisfies the CLI (see **[rag-ingestion.md](rag-ingestion.md)**).
+- **`.github/workflows/ingest-rag-corpus.yml`**: Manual dispatch only. Same **secrets** as Deploy API; **`terraform init`** / **`terraform output`** supply **`corpus_bucket_name`** and **`rag_corpus_resource_name`** (set **`gha_terraform_state_bucket`** + repository Variable **`TF_STATE_BUCKET`**, then apply for state-bucket IAM). Then **`ingest_rag_corpus.py`** with **`--skip-upload`** imports the **entire** `gs://<bucket>/rag-sources/` prefix; **`--files`** only satisfies the CLI (see **[rag-ingestion.md](rag-ingestion.md)**).
 - **Local full ingest**: **`uv sync`**, ADC (`gcloud auth application-default login`), then **`uv run python scripts/ingest_rag_corpus.py`** (can create corpus, upload, import, and ensure RAG engine Spanner tier or Serverless when needed — see script docstring).
 
 ## Idle session digest (email)

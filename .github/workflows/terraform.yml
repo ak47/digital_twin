@@ -4,8 +4,8 @@
 #   GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID — same as Deploy API
 #   TERRAFORM_TFVARS — full multiline body of your gitignored terraform/terraform.tfvars (must match prod)
 #
-# IAM: set github_actions_terraform_roles + gha_terraform_state_bucket in tfvars (match backend.tf); apply once
-# so this SA can plan/apply. See terraform/README.md → GitHub Actions Terraform.
+# IAM: set github_actions_terraform_roles + gha_terraform_state_bucket in tfvars and TF_STATE_BUCKET repo Variable
+# to the same bucket; apply once so this SA can plan/apply. See terraform/README.md → GitHub Actions Terraform.
 
 name: Terraform
 
@@ -53,14 +53,16 @@ jobs:
           GCP_SA_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           TFVARS: ${{ secrets.TERRAFORM_TFVARS }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
         run: |
           missing=""
           [ -z "${GCP_WIF_PROVIDER}" ] && missing="${missing} GCP_WORKLOAD_IDENTITY_PROVIDER"
           [ -z "${GCP_SA_EMAIL}" ] && missing="${missing} GCP_SERVICE_ACCOUNT_EMAIL"
           [ -z "${GCP_PROJECT_ID}" ] && missing="${missing} GCP_PROJECT_ID"
           [ -z "${TFVARS}" ] && missing="${missing} TERRAFORM_TFVARS"
+          [ -z "${TF_STATE_BUCKET}" ] && missing="${missing} TF_STATE_BUCKET (repo variable)"
           if [ -n "${missing}" ]; then
-            echo "::error::Missing repository secrets:${missing}"
+            echo "::error::Missing repository secrets/variables:${missing}"
             echo "Set TERRAFORM_TFVARS to the full contents of terraform/terraform.tfvars (see terraform/README.md)."
             exit 1
           fi
@@ -84,7 +86,9 @@ jobs:
         run: terraform -chdir=terraform fmt -check -recursive
 
       - name: Terraform init
-        run: terraform -chdir=terraform init -input=false -no-color
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: terraform -chdir=terraform init -input=false -no-color -backend-config="bucket=${TF_STATE_BUCKET}"
 
       - name: Terraform validate
         run: terraform -chdir=terraform validate -no-color
