@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.136.1",
-    "uvicorn[standard]>=0.46.0",
+    "uvicorn[standard]>=0.47.0",
     "google-api-python-client>=2.196.0",
     "google-auth>=2.52.0",
     "google-cloud-error-reporting>=1.12.0",
