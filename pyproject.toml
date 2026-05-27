@@ -9,7 +9,7 @@ description = "Cloud Run API for career chat (Vertex RAG + Gemini)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.136.1",
+    "fastapi>=0.136.3",
     "uvicorn[standard]>=0.48.0",
     "google-api-python-client>=2.196.0",
     "google-auth>=2.53.0",
