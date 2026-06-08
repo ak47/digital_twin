@@ -199,3 +199,15 @@ variable "session_digest_display_timezone" {
   type        = string
   default     = "America/Los_Angeles"
 }
+
+variable "enable_crash_data" {
+  description = "Provision GCS bucket + BigQuery dataset for NYC/CA motor vehicle crash CSVs (digital-twin SQL tool)."
+  type        = bool
+  default     = true
+}
+
+variable "crash_data_bq_dataset" {
+  description = "BigQuery dataset id for crash tables (Cloud Run CRASH_DATA_BQ_DATASET)."
+  type        = string
+  default     = "vehicle_crashes"
+}

@@ -86,3 +86,13 @@ output "session_digest_job_name" {
   description = "Set GitHub Actions variable SESSION_DIGEST_JOB_NAME to this so deploy-api.yml updates the job image after each push."
   value       = local.session_digest_ready ? google_cloud_run_v2_job.session_digest[0].name : null
 }
+
+output "crash_data_bucket_name" {
+  description = "Upload NYC/CA crash CSVs here under crash-sources/ before running scripts/load_crash_data.py."
+  value       = var.enable_crash_data ? google_storage_bucket.crash_data[0].name : null
+}
+
+output "crash_data_bq_dataset" {
+  description = "BigQuery dataset id for crash tables (matches CRASH_DATA_BQ_DATASET on Cloud Run)."
+  value       = var.enable_crash_data ? google_bigquery_dataset.crash_data[0].dataset_id : null
+}

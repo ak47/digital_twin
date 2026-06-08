@@ -11,11 +11,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from digital_twin import rag_vertex
+from digital_twin import crash_data, rag_vertex
 from digital_twin.metrics import record_latency_ms, sized_label
 from digital_twin.settings import get_settings
 
 logger = logging.getLogger(__name__)
+
+_MAX_CRASH_TOOL_ROUNDS = 4
 
 # When RAG is configured but retrieval returns no chunks, the model must not fill gaps from priors.
 _RAG_EMPTY_RETRIEVAL_BLOCK = """## Retrieved documents (RAG)
@@ -80,6 +82,91 @@ def _load_system_instruction() -> str:
     return base
 
 
+def _build_system_instruction(base: str, *, rag_block: str | None, project: str, dataset: str) -> str:
+    parts = [base]
+    if rag_block:
+        parts.extend(["---", rag_block])
+    if dataset:
+        parts.extend(["---", crash_data.schema_instruction(project, dataset)])
+    return "\n\n".join(parts)
+
+
+def _history_to_contents(history: list[dict[str, Any]], user_text: str) -> list[Any]:
+    from google.genai import types
+
+    contents: list[types.Content] = []
+    for m in history:
+        role = m.get("role")
+        text = (m.get("text") or "").strip()
+        if not text:
+            continue
+        grole = "user" if role == "user" else "model"
+        contents.append(
+            types.Content(role=grole, parts=[types.Part.from_text(text=text)])
+        )
+    contents.append(
+        types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
+    )
+    return contents
+
+
+def _generate_with_crash_tools(
+    client: Any,
+    model: str,
+    contents: list[Any],
+    config: Any,
+    *,
+    project: str,
+    dataset: str,
+) -> str:
+    from google.genai import types
+
+    for _ in range(_MAX_CRASH_TOOL_ROUNDS):
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+        )
+        candidate = response.candidates[0] if response.candidates else None
+        if candidate is None or candidate.content is None:
+            return "(No model response.)"
+
+        parts = candidate.content.parts or []
+        function_calls = [p for p in parts if getattr(p, "function_call", None)]
+        if not function_calls:
+            text = getattr(response, "text", None)
+            return (text or "").strip() or "(Empty model response.)"
+
+        contents.append(candidate.content)
+        tool_parts: list[Any] = []
+        for part in function_calls:
+            fc = part.function_call
+            name = getattr(fc, "name", "") or ""
+            args = dict(getattr(fc, "args", None) or {})
+            if name != "query_crash_data":
+                tool_parts.append(
+                    types.Part.from_function_response(
+                        name=name or "unknown_tool",
+                        response={"error": f"Unknown tool: {name}"},
+                    )
+                )
+                continue
+            result = crash_data.execute_query(
+                project,
+                dataset,
+                str(args.get("sql") or ""),
+            )
+            tool_parts.append(
+                types.Part.from_function_response(
+                    name="query_crash_data",
+                    response={"result": result},
+                )
+            )
+        contents.append(types.Content(role="user", parts=tool_parts))
+
+    return "(Could not finish crash data query within the allowed tool rounds.)"
+
+
 def stream_reply(
     history: list[dict[str, Any]],
     user_text: str,
@@ -90,13 +177,13 @@ def stream_reply(
     """
     s = get_settings()
     project = _resolve_gcp_project()
+    corpus = s.rag_corpus_resource
     # Preview publisher models are frequently only served from the global location on Vertex.
     # If GEMINI_LOCATION is set, respect it. Otherwise default previews to global.
     location = (
         s.gemini_location
         or ("global" if "-preview" in s.gemini_model else s.gcp_region)
     )
-    system = _load_system_instruction()
 
     if not project:
         yield (
@@ -105,13 +192,22 @@ def stream_reply(
         )
         return
 
-    corpus = s.rag_corpus_resource
+    system = _load_system_instruction()
+    rag_block: str | None = None
+
     if corpus:
         rag_block = rag_vertex.fetch_rag_context(
             project, s.gcp_region, corpus, user_text
         )
         rag_block = rag_block or _RAG_EMPTY_RETRIEVAL_BLOCK
-        system = f"{system}\n\n---\n\n{rag_block}"
+
+    crash_dataset = s.crash_data_bq_dataset
+    system = _build_system_instruction(
+        system,
+        rag_block=rag_block,
+        project=project,
+        dataset=crash_dataset,
+    )
 
     gen_start = time.perf_counter()
     status = "ok"
@@ -132,19 +228,56 @@ def stream_reply(
         yield f"(Model unavailable: {e!s})"
         return
 
-    contents: list[types.Content] = []
-    for m in history:
-        role = m.get("role")
-        text = (m.get("text") or "").strip()
-        if not text:
-            continue
-        grole = "user" if role == "user" else "model"
-        contents.append(
-            types.Content(role=grole, parts=[types.Part.from_text(text=text)])
+    contents = _history_to_contents(history, user_text)
+
+    if crash_dataset:
+        tools = [
+            types.Tool(
+                function_declarations=[
+                    types.FunctionDeclaration(
+                        name="query_crash_data",
+                        description=(
+                            "Run a readonly BigQuery Standard SQL SELECT against NYC and "
+                            "California motor vehicle crash tables."
+                        ),
+                        parameters=types.Schema(
+                            type="OBJECT",
+                            properties={
+                                "sql": types.Schema(
+                                    type="STRING",
+                                    description="BigQuery Standard SQL SELECT statement.",
+                                )
+                            },
+                            required=["sql"],
+                        ),
+                    )
+                ]
+            )
+        ]
+        tool_config = types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=s.max_output_tokens,
+            temperature=s.gemini_temperature,
+            tools=tools,
         )
-    contents.append(
-        types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
-    )
+        try:
+            text = _generate_with_crash_tools(
+                client,
+                s.gemini_model,
+                contents,
+                tool_config,
+                project=project,
+                dataset=crash_dataset,
+            )
+            out_chars = len(text)
+            yield text
+        except Exception as e:
+            status = "error"
+            logger.exception("generate_content with crash tools failed: %s", e)
+            yield f"(Generation error: {e!s})"
+        finally:
+            _record_gemini_latency(gen_start, status, out_chars, corpus, s, location)
+        return
 
     try:
         stream = client.models.generate_content_stream(
@@ -166,31 +299,42 @@ def stream_reply(
         logger.exception("generate_content_stream failed: %s", e)
         yield f"(Generation error: {e!s})"
     finally:
-        try:
-            mode_raw = (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
-            rag_mode = (
-                "serverless"
-                if mode_raw == "SERVERLESS"
-                else "spanner"
-                if mode_raw.startswith("SPANNER")
-                else "unknown"
-            )
-            record_latency_ms(
-                "gemini_generate_latency_ms",
-                (time.perf_counter() - gen_start) * 1000.0,
-                labels={
-                    "rag_mode": rag_mode,
-                    "gemini_location": location or "unknown",
-                    "rag_location": (
-                        rag_vertex._vertex_location_for_corpus(corpus, s.gcp_region)  # noqa: SLF001
-                        if corpus
-                        else "disabled"
-                    ),
-                    "gemini_model": s.gemini_model or "unknown",
-                    "rag_top_k": str(int(os.environ.get("RAG_TOP_K", "8"))),
-                    "status": status,
-                    "output_chars": sized_label(out_chars),
-                },
-            )
-        except Exception:
-            pass
+        _record_gemini_latency(gen_start, status, out_chars, corpus, s, location)
+
+
+def _record_gemini_latency(
+    gen_start: float,
+    status: str,
+    out_chars: int,
+    corpus: str,
+    s: Any,
+    location: str,
+) -> None:
+    try:
+        mode_raw = (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
+        rag_mode = (
+            "serverless"
+            if mode_raw == "SERVERLESS"
+            else "spanner"
+            if mode_raw.startswith("SPANNER")
+            else "unknown"
+        )
+        record_latency_ms(
+            "gemini_generate_latency_ms",
+            (time.perf_counter() - gen_start) * 1000.0,
+            labels={
+                "rag_mode": rag_mode,
+                "gemini_location": location or "unknown",
+                "rag_location": (
+                    rag_vertex._vertex_location_for_corpus(corpus, s.gcp_region)  # noqa: SLF001
+                    if corpus
+                    else "disabled"
+                ),
+                "gemini_model": s.gemini_model or "unknown",
+                "rag_top_k": str(int(os.environ.get("RAG_TOP_K", "8"))),
+                "status": status,
+                "output_chars": sized_label(out_chars),
+            },
+        )
+    except Exception:
+        pass

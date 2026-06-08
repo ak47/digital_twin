@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -230,6 +230,7 @@ dependencies = [
     { name = "google-api-python-client" },
     { name = "google-auth" },
     { name = "google-cloud-aiplatform" },
+    { name = "google-cloud-bigquery" },
     { name = "google-cloud-error-reporting" },
     { name = "google-cloud-logging" },
     { name = "google-cloud-monitoring" },
@@ -251,6 +252,7 @@ requires-dist = [
     { name = "google-api-python-client", specifier = ">=2.197.0" },
     { name = "google-auth", specifier = ">=2.53.0" },
     { name = "google-cloud-aiplatform", specifier = ">=1.154.0" },
+    { name = "google-cloud-bigquery", specifier = ">=3.27.0" },
     { name = "google-cloud-error-reporting", specifier = ">=1.12.0" },
     { name = "google-cloud-logging", specifier = ">=3.12.0" },
     { name = "google-cloud-monitoring", specifier = ">=2.30.0" },

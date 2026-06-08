@@ -16,6 +16,7 @@ locals {
     "compute.googleapis.com", # Cloud Run dependencies
     "cloudscheduler.googleapis.com",
     "gmail.googleapis.com",
+    "bigquery.googleapis.com",
   ])
 }
 
