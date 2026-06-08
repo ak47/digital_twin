@@ -199,8 +199,7 @@ Or use GitHub Actions **Ingest RAG corpus** (see **`.github/workflows/ingest-rag
 3. **Wire Cloud Run** with the printed resource name:
 
    - Local / Terraform: `TF_VAR_rag_corpus_resource_name=projects/.../ragCorpora/...`
-   - GitHub Actions: repository **Variable** `RAG_CORPUS_RESOURCE` (same string)
-   - Then `terraform apply` and/or push a deploy so the revision gets the env var.
+   - Then `terraform apply` (sets **`RAG_CORPUS_RESOURCE`** on the service; **Deploy API** does not override it).
 
 **Manual alternative:** `gsutil cp knowledge.txt Profile.pdf gs://$(terraform output -raw corpus_bucket_name)/rag-sources/` then create/import a corpus in the [Vertex RAG console](https://console.cloud.google.com/vertex-ai/studio) or via the [RAG API](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/rag-api-v1).
 
