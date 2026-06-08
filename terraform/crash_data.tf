@@ -21,12 +21,12 @@ resource "google_storage_bucket" "crash_data" {
 resource "google_bigquery_dataset" "crash_data" {
   count = var.enable_crash_data ? 1 : 0
 
-  dataset_id                  = local.crash_data_bq_dataset
-  friendly_name               = "Vehicle crash data (NYC + California)"
-  description                 = "NYC Open Data and California CCRS crash CSVs loaded for digital-twin SQL queries."
-  location                    = var.region
-  project                     = var.project_id
-  delete_contents_on_destroy  = var.bucket_force_destroy
+  dataset_id                 = local.crash_data_bq_dataset
+  friendly_name              = "Vehicle crash data (NYC + California)"
+  description                = "NYC Open Data and California CCRS crash CSVs loaded for digital-twin SQL queries."
+  location                   = var.region
+  project                    = var.project_id
+  delete_contents_on_destroy = var.bucket_force_destroy
 
   depends_on = [google_project_service.required]
 }
