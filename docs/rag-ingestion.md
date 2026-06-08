@@ -36,8 +36,7 @@ The script uploads objects to `gs://<bucket>/rag-sources/<filename>`, creates a 
 
 Wire the API:
 
-- **Terraform:** `rag_corpus_resource_name` in `terraform.tfvars` (or `TF_VAR_rag_corpus_resource_name`), then `terraform apply`. This is the **single source of truth** for Cloud Run **`RAG_CORPUS_RESOURCE`** and for **`terraform output rag_corpus_resource_name`** (used by the ingest workflow).
-- **GitHub Actions (optional):** repository **Variable** `RAG_CORPUS_RESOURCE` on deploy **only** if you intentionally override Terraform without applying; leave it unset to avoid drift.
+- **Terraform:** `rag_corpus_resource_name` in `terraform.tfvars` (or `TF_VAR_rag_corpus_resource_name`), then `terraform apply`. This is the **single source of truth** for Cloud Run **`RAG_CORPUS_RESOURCE`** and for **`terraform output rag_corpus_resource_name`** (used by the ingest workflow). **Deploy API** does not set or override this variable.
 
 ## Production content updates (existing corpus)
 
@@ -84,7 +83,7 @@ After a successful re-import, **Cloud Run does not need a new revision** for con
 
 ### 3. If the API still looks stale
 
-- Confirm **`RAG_CORPUS_RESOURCE`** on the service **exactly matches** **`rag_corpus_resource_name`** in Terraform state (and avoid setting the deploy workflow’s **`RAG_CORPUS_RESOURCE`** repository Variable unless you mean to override Terraform). A typo or an old corpus id means the app queries a different index than CI updates.
+- Confirm **`RAG_CORPUS_RESOURCE`** on the service **exactly matches** **`rag_corpus_resource_name`** in Terraform state (`terraform output -raw rag_corpus_resource_name`). A typo or an old corpus id means the app queries a different index than CI updates; fix with **`terraform apply`**, not deploy overrides.
 - After ingest, read **`Vertex import result: imported=…, skipped=…, failed=…`** in the Actions log. **`imported=0` with `skipped>0`** usually means Vertex treated GCS URIs as unchanged — overwriting a blob in place often **does not** re-embed; rename the object or delete the RagFile in the Vertex console, then re-import.
 - Retrieval uses the **location embedded in the corpus resource name**; Gemini generation uses **`GEMINI_LOCATION` / `GCP_REGION`**. The API initializes Vertex retrieval using the **project in the corpus resource name** so it stays aligned even if **`GCP_PROJECT_ID`** on Cloud Run is wrong. See [architecture.md](architecture.md).
 

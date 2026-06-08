@@ -66,7 +66,7 @@ flowchart TB
 - **RAG is optional**: If `RAG_CORPUS_RESOURCE` is unset, answers use **`system.md` only** (no retrieval). When set, `rag_vertex.fetch_rag_context` runs **`vertexai.rag.retrieval_query`**, formats chunks, and **`llm.stream_reply`** appends them to the system instruction before calling Gemini.
 - **Two regions**: **Gemini** uses **`GCP_REGION`** (default `us-central1` on Cloud Run). **Retrieval** initializes Vertex in the **location embedded in `RAG_CORPUS_RESOURCE`** (e.g. `.../locations/europe-west4/ragCorpora/...` when using a backup ingest region). See `rag_vertex.py` and `terraform/README.md` (RAG backup region).
 - **Tuning**: **`RAG_TOP_K`**, optional **`RAG_VECTOR_DISTANCE_THRESHOLD`** (see `main.py` / `.env.example`).
-- **`RAG_CORPUS_RESOURCE` on Cloud Run**: Set via Terraform **`rag_corpus_resource_name`** → env on the service (source of truth). **Deploy API** may pass repository **Variable** `RAG_CORPUS_RESOURCE` only as an intentional override; leave unset to avoid drifting from Terraform. **Ingest RAG corpus** reads **`rag_corpus_resource_name`** from remote Terraform state (with **`gha_terraform_state_bucket`** IAM), not from extra GitHub Variables.
+- **`RAG_CORPUS_RESOURCE` on Cloud Run**: Set via Terraform **`rag_corpus_resource_name`** → env on the service (source of truth). **Deploy API** does not override it. **Ingest RAG corpus** reads **`rag_corpus_resource_name`** from remote Terraform state (with **`gha_terraform_state_bucket`** IAM), not from GitHub Variables.
 - **Terraform remote state**: **GCS** backend with bucket injected at init (`terraform init -backend-config="bucket=..."`). Keep repository Variable `TF_STATE_BUCKET` equal to `gha_terraform_state_bucket`; see `terraform/README.md`. `terraform/backend.tf.example` is an optional full-backend template.
 
 ## Deployment pipeline (API image)
@@ -92,7 +92,7 @@ flowchart LR
     PushImg --> JobImg
 ```
 
-On deploy, **environment variables** for the **API service** use a **custom delimiter** (`^;^`) so **`CORS_ALLOWED_ORIGINS`** can contain commas. Optional repository **Variables** include **`CORS_ALLOWED_ORIGINS`** and, only if overriding Terraform, **`RAG_CORPUS_RESOURCE`**. **Idle digest** Gmail and recipients are configured on the **Cloud Run Job** via Terraform, not the deploy workflow. If **`SESSION_DIGEST_JOB_NAME`** is set, the workflow also updates that job’s **image** to match the API image.
+On deploy, **environment variables** for the **API service** use a **custom delimiter** (`^;^`) so **`CORS_ALLOWED_ORIGINS`** can contain commas. Optional repository **Variables** include **`CORS_ALLOWED_ORIGINS`**, **`GEMINI_MODEL`**, **`GEMINI_LOCATION`**, and **`GEMINI_TEMPERATURE`**. **`RAG_CORPUS_RESOURCE`** is Terraform-only. **Idle digest** Gmail and recipients are configured on the **Cloud Run Job** via Terraform, not the deploy workflow. If **`SESSION_DIGEST_JOB_NAME`** is set, the workflow also updates that job’s **image** to match the API image.
 
 Secret names and copying Terraform outputs into GitHub are documented in **`terraform/README.md`** and helper **`scripts/print-github-actions-secrets.sh`**.
 

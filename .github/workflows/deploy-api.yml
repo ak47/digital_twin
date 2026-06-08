@@ -110,9 +110,7 @@ jobs:
       - name: Deploy to Cloud Run
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          # Optional override only: Cloud Run already gets RAG_CORPUS_RESOURCE from Terraform when set.
-          # Leave this repository Variable unset to avoid drifting from terraform.tfvars rag_corpus_resource_name.
-          RAG_CORPUS_RESOURCE: ${{ vars.RAG_CORPUS_RESOURCE }}
+          # RAG_CORPUS_RESOURCE is Terraform-managed (rag_corpus_resource_name); deploy updates image + app env only.
           # Optional override; default matches terraform/variables.tf (comma in value → use ^;^ below).
           CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
           # Optional: override Gemini model/location/temperature without Terraform apply.
@@ -128,9 +126,6 @@ jobs:
           # keeps one env value with commas inside. Origins must match Terraform cors_allowed_origins.
           CORS="${CORS_ALLOWED_ORIGINS}"
           EXTRA=""
-          if [ -n "${RAG_CORPUS_RESOURCE}" ]; then
-            EXTRA=";RAG_CORPUS_RESOURCE=${RAG_CORPUS_RESOURCE}"
-          fi
           if [ -n "${GEMINI_MODEL:-}" ]; then
             EXTRA="${EXTRA};GEMINI_MODEL=${GEMINI_MODEL}"
           fi

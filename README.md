@@ -47,7 +47,7 @@ Run the API locally with variables from [`.env.example`](.env.example). Terrafor
 3. Set repository **Variable** **`CORS_ALLOWED_ORIGINS`** (comma-separated, same origins as Terraform **`cors_allowed_origins`**). **Deploy API** fails fast if it is missing so the workflow cannot drift to generic defaults.
 4. Push to `main` (or run **Deploy API** manually); [.github/workflows/deploy-api.yml](.github/workflows/deploy-api.yml) builds `linux/amd64`, pushes the image, and updates the service.
 
-Optional repository **Variables** (for example **`RAG_CORPUS_RESOURCE`** only if overriding Terraform on deploy) are described in `terraform/README.md` and [docs/architecture.md](docs/architecture.md). **Ingest RAG corpus** reads **`corpus_bucket_name`** and **`rag_corpus_resource_name`** from remote Terraform state — no separate `CORPUS_BUCKET_NAME` / `RAG_CORPUS_RESOURCE` variables for that workflow.
+Optional repository **Variables** for deploy (for example **`GEMINI_MODEL`**, **`CORS_ALLOWED_ORIGINS`**) are described in `terraform/README.md` and [docs/architecture.md](docs/architecture.md). **`RAG_CORPUS_RESOURCE`** is Terraform-only. **Ingest RAG corpus** reads **`corpus_bucket_name`** and **`rag_corpus_resource_name`** from remote Terraform state — no separate GitHub Variables for those.
 
 **Region:** Default compute / primary Terraform region is **`us-central1`** ([terraform/variables.tf](terraform/variables.tf)). RAG ingest may use a different region if you configured `rag_corpus_ingest_region` (see [docs/rag-ingestion.md](docs/rag-ingestion.md)).
 
