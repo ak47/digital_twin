@@ -1,0 +1,159 @@
+# Download NYC/CA open-data CSVs, upload to GCS, and load BigQuery crash tables.
+#
+# Triggers:
+#   - Monthly schedule (full download + load)
+#   - workflow_dispatch (optional full_download input)
+#   - After Terraform workflow succeeds on main (auto: full download if GCS empty, else reload from GCS)
+#
+# Secrets: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID
+# Variable: TF_STATE_BUCKET (same as Terraform / Ingest workflows)
+#
+# Requires Terraform enable_crash_data=true and a successful terraform apply (GitHub: Terraform workflow).
+
+name: Load crash data
+
+on:
+  schedule:
+    # 1st of each month, 07:00 UTC — refresh from NYC Open Data + data.ca.gov
+    - cron: "0 7 1 * *"
+  workflow_dispatch:
+    inputs:
+      full_download:
+        description: Download fresh CSVs from open data before load (unchecked = reload from GCS only)
+        type: boolean
+        default: true
+  workflow_run:
+    workflows: ["Terraform"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: load-crash-data-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        (github.event.workflow_run.event == 'push' ||
+         github.event.workflow_run.event == 'workflow_dispatch')
+      )
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check GCP secrets
+        env:
+          GCP_WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SA_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          missing=""
+          [ -z "${GCP_WIF_PROVIDER}" ] && missing="${missing} GCP_WORKLOAD_IDENTITY_PROVIDER"
+          [ -z "${GCP_SA_EMAIL}" ] && missing="${missing} GCP_SERVICE_ACCOUNT_EMAIL"
+          [ -z "${GCP_PROJECT_ID}" ] && missing="${missing} GCP_PROJECT_ID"
+          [ -z "${TF_STATE_BUCKET}" ] && missing="${missing} TF_STATE_BUCKET (repo variable)"
+          if [ -n "${missing}" ]; then
+            echo "::error::Missing secrets/variables:${missing}"
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Resolve Terraform outputs
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          set -eu
+          cd terraform
+          terraform init -input=false -no-color -backend-config="bucket=${TF_STATE_BUCKET}"
+          BUCKET="$(terraform output -raw crash_data_bucket_name 2>/dev/null || true)"
+          DATASET="$(terraform output -raw crash_data_bq_dataset 2>/dev/null || true)"
+          if [ -z "${BUCKET}" ] || [ "${BUCKET}" = "null" ] || [ -z "${DATASET}" ] || [ "${DATASET}" = "null" ]; then
+            echo "::notice::Crash data disabled (enable_crash_data=false or not applied yet); skipping."
+            echo "SKIP_LOAD=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "CRASH_BUCKET=${BUCKET}" >> "$GITHUB_ENV"
+          echo "CRASH_DATASET=${DATASET}" >> "$GITHUB_ENV"
+          echo "Crash GCS bucket: ${BUCKET}"
+          echo "BigQuery dataset: ${DATASET}"
+
+      - name: Decide full download vs GCS reload
+        if: env.SKIP_LOAD != 'true'
+        env:
+          DISPATCH_FULL: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.full_download }}
+        run: |
+          set -eu
+          FULL="false"
+          case "${{ github.event_name }}" in
+            schedule)
+              FULL="true"
+              ;;
+            workflow_dispatch)
+              FULL="${DISPATCH_FULL:-true}"
+              ;;
+            workflow_run)
+              # After Terraform: full download only when GCS has no CSVs yet
+              if gcloud storage ls "gs://${CRASH_BUCKET}/crash-sources/" 2>/dev/null | grep -q '\.csv'; then
+                FULL="false"
+              else
+                FULL="true"
+              fi
+              ;;
+            *)
+              FULL="true"
+              ;;
+          esac
+          echo "FULL_DOWNLOAD=${FULL}" >> "$GITHUB_ENV"
+          echo "Mode: full_download=${FULL}"
+
+      - name: Load crash data into BigQuery
+        if: env.SKIP_LOAD != 'true'
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -eu
+          ARGS=(
+            --project-id "${PROJECT_ID}"
+            --bucket "${CRASH_BUCKET}"
+            --dataset "${CRASH_DATASET}"
+          )
+          if [ "${FULL_DOWNLOAD}" = "true" ]; then
+            ARGS+=(--download --download-dir /tmp/crash-sources)
+          else
+            ARGS+=(--skip-upload)
+          fi
+          uv run python scripts/load_crash_data.py "${ARGS[@]}"

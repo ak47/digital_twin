@@ -36,6 +36,8 @@ class Settings:
     gmail_service_account_json: str
     gmail_service_account_key_file: str
 
+    crash_data_bq_dataset: str
+
 
 def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default).strip()
@@ -93,6 +95,7 @@ def get_settings() -> Settings:
         gmail_delegated_user=_env("GMAIL_DELEGATED_USER", ""),
         gmail_service_account_json=_env("GMAIL_SERVICE_ACCOUNT_JSON", ""),
         gmail_service_account_key_file=_env("GMAIL_SERVICE_ACCOUNT_KEY_FILE", ""),
+        crash_data_bq_dataset=_env("CRASH_DATA_BQ_DATASET", ""),
     )
 
 

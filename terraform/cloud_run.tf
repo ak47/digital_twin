@@ -80,6 +80,14 @@ resource "google_cloud_run_v2_service" "api" {
           value = var.rag_corpus_resource_name
         }
       }
+
+      dynamic "env" {
+        for_each = var.enable_crash_data ? [1] : []
+        content {
+          name  = "CRASH_DATA_BQ_DATASET"
+          value = var.crash_data_bq_dataset
+        }
+      }
     }
   }
 
@@ -88,6 +96,8 @@ resource "google_cloud_run_v2_service" "api" {
     google_project_iam_member.vertex_user,
     google_storage_bucket_iam_member.corpus_admin,
     google_storage_bucket_iam_member.sessions_admin,
+    google_project_iam_member.crash_data_job_user,
+    google_bigquery_dataset_iam_member.crash_data_viewer,
   ]
 }
 

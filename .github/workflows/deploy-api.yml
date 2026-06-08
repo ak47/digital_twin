@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      - "scripts/load_crash_data.py"
       - "Dockerfile"
       - "pyproject.toml"
       - "uv.lock"

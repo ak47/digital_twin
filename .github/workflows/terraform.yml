@@ -1,11 +1,17 @@
 # Run Terraform from GitHub (same WIF + secrets as deploy). Keeps infra changes in one place.
 #
+# On push to main (terraform/**): plan then **apply** automatically.
+# On pull_request: plan only (no apply).
+# workflow_dispatch: plan; apply when the "apply" input is checked.
+#
 # Secrets (repository):
 #   GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID — same as Deploy API
 #   TERRAFORM_TFVARS — full multiline body of your gitignored terraform/terraform.tfvars (must match prod)
 #
 # IAM: set github_actions_terraform_roles + gha_terraform_state_bucket in tfvars and TF_STATE_BUCKET repo Variable
 # to the same bucket; apply once so this SA can plan/apply. See terraform/README.md → GitHub Actions Terraform.
+#
+# After a successful apply on main, the **Load crash data** workflow runs (workflow_run) to populate BigQuery.
 
 name: Terraform
 
@@ -100,7 +106,9 @@ jobs:
         run: terraform -chdir=terraform show -no-color tfplan
 
       - name: Terraform apply
+        id: apply
         if: >-
-          github.event_name == 'workflow_dispatch' &&
-          (github.event.inputs.apply == true || github.event.inputs.apply == 'true')
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'workflow_dispatch' &&
+           (github.event.inputs.apply == true || github.event.inputs.apply == 'true'))
         run: terraform -chdir=terraform apply -input=false -no-color -auto-approve tfplan
