@@ -205,7 +205,7 @@ The owner can export all active conversations to a portable file for backup or a
 - Admin access is limited to Google accounts on a hardcoded email allowlist (initially the site owner; additional addresses require a configuration change and deploy). No shared password; no multi-tenant role model beyond allowlist membership in this phase.
 - Visitors are anonymous; identity is limited to an optional display name and browser-stored conversation id.
 - The existing Vertex-based twin and optional RAG retrieval remain the generation backend; this feature changes persistence and human-in-the-loop workflow, not the core model provider.
-- The current constitution restricts storage to GCS for sessions; adopting message-level relational storage **requires a constitution amendment** during planning (Technology & Platform Constraints). Until amended, this spec describes required behavior, not a specific storage product.
+- Message-level relational storage uses **Cloud SQL PostgreSQL** per constitution v1.1.0+ (Technology & Platform Constraints). GCS remains for RAG corpus and optional legacy session/digest paths.
 - Escalation alerts are delivered by **email** (reusing or extending the existing Gmail/Workspace sending path used for idle session digests). The idle digest remains for inactive threads; escalation email is immediate on needs-attention.
 - **Pushover** (or similar mobile push), as in the ed-donner/avatar reference, is a **future optional** channel—not in scope for 001.
 - P3 export/archive capabilities are explicitly deferred; P1–P2 deliver the human-in-the-loop MVP including additional instructions.

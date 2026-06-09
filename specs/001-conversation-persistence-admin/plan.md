@@ -152,7 +152,7 @@ Existing: `CORS_ALLOWED_ORIGINS`, Gmail digest vars, Gemini/RAG vars.
 | Google OAuth vs IAP | Spec requires Google account + allowlist; local dev parity | IAP not available on localhost |
 | Optional `notify_owner` tool | Reliable FR-010 escalation detection | Parsing free-text twin replies is brittle |
 
-**Follow-up**: Run `/speckit-constitution` MINOR amendment to Technology & Platform Constraints (add Cloud SQL for conversation data).
+**Follow-up**: Constitution v1.1.0 (2026-06-09) permits Cloud SQL for conversation data — amendment complete.
 
 ## Artifact Index
 

@@ -1,14 +1,18 @@
 <!--
 Sync Impact Report
-- Version change: (unversioned template) → 1.0.0
-- Modified principles: initial adoption — all template placeholders filled
-- Added sections: Technology & Platform Constraints; Development Workflow & Quality Gates
+- Version change: 1.0.0 → 1.1.0
+- Modified principles: none (titles unchanged)
+- Modified sections: Technology & Platform Constraints (Storage); I. Terraform-First (resource list)
+- Added sections: none
 - Removed sections: none
 - Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ updated (Constitution Check gates)
+  - .specify/templates/plan-template.md ✅ no changes required (Terraform gate already generic)
   - .specify/templates/spec-template.md ✅ no changes required
   - .specify/templates/tasks-template.md ✅ no changes required
   - .specify/templates/commands/*.md ⚠ not present in repo (skipped)
+- Runtime docs follow-up:
+  - docs/architecture.md ⚠ pending feature 001 implement (tasks T059)
+  - specs/001-conversation-persistence-admin/spec.md assumptions may be updated to note amendment complete
 - Follow-up TODOs: none
 -->
 
@@ -18,12 +22,12 @@ Sync Impact Report
 
 ### I. Infrastructure as Code (Terraform-First)
 
-All GCP resources (Cloud Run, GCS, Vertex RAG, IAM, Scheduler, alerting) MUST be
-defined and changed through Terraform in `terraform/`. Manual console changes that
-drift from Terraform state are prohibited unless followed immediately by a
+All GCP resources (Cloud Run, Cloud SQL, GCS, Vertex RAG, IAM, Scheduler, alerting)
+MUST be defined and changed through Terraform in `terraform/`. Manual console changes
+that drift from Terraform state are prohibited unless followed immediately by a
 Terraform commit that restores the desired state. GitHub Actions workflows MUST
 align with Terraform outputs (WIF, remote state bucket, CORS, corpus resource
-names).
+names, database connection settings).
 
 **Rationale**: Prevents environment drift between local, CI, and production; keeps
 deploy and ingest workflows reproducible.
@@ -75,8 +79,14 @@ small team.
 - **Language**: Python ≥3.13; package management via **uv** (`uv sync`, `uv run`)
 - **API**: FastAPI on Cloud Run (`linux/amd64` images via Artifact Registry)
 - **AI**: Vertex AI Gemini for generation; optional Vertex RAG Engine for retrieval
-- **Storage**: GCS for sessions and RAG corpus (no alternate database without an
-  explicit constitution amendment)
+- **Storage**:
+  - **GCS**: RAG corpus (`rag-sources/`); optional legacy per-session JSON blobs
+    and idle digest attachments when `GCS_SESSIONS_BUCKET` is set
+  - **Cloud SQL (PostgreSQL)**: conversation messages, admin settings (e.g.
+    additional instructions), and related relational data for human-in-the-loop
+    chat—provisioned via Terraform (`terraform/cloud_sql.tf` or successor)
+  - No other databases or external persistence stores without an explicit
+    constitution amendment
 - **Frontend**: Out of repository; CORS origins required via Terraform variable
   `cors_allowed_origins` and deploy variable `CORS_ALLOWED_ORIGINS`
 - **Region defaults**: `us-central1` unless a documented multi-region exception
@@ -110,4 +120,4 @@ small team.
 - Runtime development guidance lives in `README.md`, `docs/architecture.md`, and
   `terraform/README.md`
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-09 | **Last Amended**: 2026-06-09
+**Version**: 1.1.0 | **Ratified**: 2026-06-09 | **Last Amended**: 2026-06-09
