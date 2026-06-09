@@ -12,6 +12,8 @@ on:
       - "Dockerfile"
       - "pyproject.toml"
       - "uv.lock"
+      - "alembic/**"
+      - "alembic.ini"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
 
@@ -107,6 +109,29 @@ jobs:
           docker build --platform linux/amd64 -t "${IMAGE}" .
           docker push "${IMAGE}"
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+
+      # Optional: Alembic migrations before new revision serves traffic.
+      # Set repository Variables CLOUD_SQL_CONNECTION_NAME and CONVERSATION_DATABASE_URL_SECRET_ID
+      # (terraform outputs). Skipped when either is unset (conversation DB not enabled).
+      - name: Run database migrations (Alembic)
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          CLOUD_SQL_CONNECTION_NAME: ${{ vars.CLOUD_SQL_CONNECTION_NAME }}
+          CONVERSATION_DATABASE_URL_SECRET_ID: ${{ vars.CONVERSATION_DATABASE_URL_SECRET_ID }}
+        run: |
+          set -eu
+          INSTANCE="$(printf '%s' "${CLOUD_SQL_CONNECTION_NAME:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          SECRET_ID="$(printf '%s' "${CONVERSATION_DATABASE_URL_SECRET_ID:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          if [ -z "${INSTANCE}" ] || [ -z "${SECRET_ID}" ]; then
+            echo "CLOUD_SQL_CONNECTION_NAME or CONVERSATION_DATABASE_URL_SECRET_ID unset; skip Alembic migrations"
+            exit 0
+          fi
+          curl -fsSL -o cloud-sql-proxy \
+            https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.3/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          export CLOUD_SQL_PROXY_BIN="${PWD}/cloud-sql-proxy"
+          export GCP_PROJECT_ID="${PROJECT_ID}"
+          uv run python -m digital_twin.migrate
 
       - name: Deploy to Cloud Run
         env:

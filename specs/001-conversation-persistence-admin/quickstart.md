@@ -23,7 +23,7 @@ export ESCALATION_EMAIL_TO="you@example.com"
 uv run python -m digital_twin.main   # or uvicorn per README
 ```
 
-Apply schema: `psql "$DATABASE_URL" -f scripts/sql/001_conversations.sql` (created in implement phase).
+Apply schema (Alembic): `uv run alembic upgrade head` with `DATABASE_URL` set.
 
 ## 2. P1 — Visitor persistence
 

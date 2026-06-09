@@ -15,9 +15,9 @@
 
 **Purpose**: Dependencies, SQL layout, and constitution follow-up before application code.
 
-- [ ] T001 Add SQLAlchemy, psycopg[binary], itsdangerous, and google-auth-oauthlib to `pyproject.toml` and refresh `uv.lock`
-- [ ] T002 Create PostgreSQL schema file `scripts/sql/001_conversations.sql` per `data-model.md` (`conversations`, `messages`, `owner_settings`)
-- [ ] T003 [P] Document Cloud SQL env vars in `.env.example` (DATABASE_URL, OAuth, allowlist, escalation)
+- [x] T001 Add SQLAlchemy, psycopg[binary], itsdangerous, and google-auth-oauthlib to `pyproject.toml` and refresh `uv.lock`
+- [x] T002 Create PostgreSQL schema file `scripts/sql/001_conversations.sql` per `data-model.md` (`conversations`, `messages`, `owner_settings`)
+- [x] T003 [P] Document Cloud SQL env vars in `.env.example` (DATABASE_URL, OAuth, allowlist, escalation)
 - [x] T004 Run `/speckit-constitution` MINOR amendment: add Cloud SQL for conversation data to `.specify/memory/constitution.md` Technology constraints
 
 ---
@@ -28,14 +28,14 @@
 
 **⚠️ CRITICAL**: No user story work until this phase is complete.
 
-- [ ] T005 Add `terraform/cloud_sql.tf` (PostgreSQL instance, database, user, Secret Manager password, IAM for Cloud Run)
-- [ ] T006 Update `terraform/cloud_run.tf` with Cloud SQL connector annotation, `DATABASE_URL`, OAuth secrets, `ADMIN_ALLOWED_EMAILS`, and escalation email env
-- [ ] T007 [P] Document Cloud SQL operator steps in `terraform/README.md` (apply order, local proxy, secret wiring); note that **`deploy-api.yml` updates image + app env only**—`DATABASE_URL` and OAuth env are **Terraform-managed** (same pattern as `RAG_CORPUS_RESOURCE`), so no deploy-workflow change required unless env vars are later moved to CI
-- [ ] T008 Extend `src/digital_twin/settings.py` with `database_url`, OAuth, allowlist, session secret, and escalation settings
-- [ ] T009 Create `src/digital_twin/conversation_store.py` with SQLAlchemy engine/session factory and health check when `DATABASE_URL` set
-- [ ] T010 Create `src/digital_twin/admin_auth.py` with Google OAuth helpers, allowlist check, and signed `dt_admin` cookie (itsdangerous) with **2-hour** session TTL (FR-005c: `max_age` on cookie + serializer validation)
-- [ ] T011 Update `src/digital_twin/main.py` to set `allow_credentials=True` on CORSMiddleware and mount placeholder admin router
-- [ ] T012 [P] Add structured log event names for new failure paths in `src/digital_twin/structured_logging.py` or module docstrings per plan.md
+- [x] T005 Add `terraform/cloud_sql.tf` (PostgreSQL instance, database, user, Secret Manager password, IAM for Cloud Run)
+- [x] T006 Update `terraform/cloud_run.tf` with Cloud SQL connector annotation, `DATABASE_URL`, OAuth secrets, `ADMIN_ALLOWED_EMAILS`, and escalation email env
+- [x] T007 [P] Document Cloud SQL operator steps in `terraform/README.md` (apply order, local proxy, secret wiring); note that **`deploy-api.yml` updates image + app env only**—`DATABASE_URL` and OAuth env are **Terraform-managed** (same pattern as `RAG_CORPUS_RESOURCE`), so no deploy-workflow change required unless env vars are later moved to CI
+- [x] T008 Extend `src/digital_twin/settings.py` with `database_url`, OAuth, allowlist, session secret, and escalation settings
+- [x] T009 Create `src/digital_twin/conversation_store.py` with SQLAlchemy engine/session factory and health check when `DATABASE_URL` set
+- [x] T010 Create `src/digital_twin/admin_auth.py` with Google OAuth helpers, allowlist check, and signed `dt_admin` cookie (itsdangerous) with **2-hour** session TTL (FR-005c: `max_age` on cookie + serializer validation)
+- [x] T011 Update `src/digital_twin/main.py` to set `allow_credentials=True` on CORSMiddleware and mount placeholder admin router
+- [x] T012 [P] Add structured log event names for new failure paths in `src/digital_twin/structured_logging.py` or module docstrings per plan.md
 
 **Checkpoint**: Foundation ready — database connectable locally; admin auth module unit-testable in isolation.
 
@@ -49,14 +49,14 @@
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Implement `insert_message`, `get_messages`, `ensure_conversation` in `src/digital_twin/conversation_store.py`; default `visitor_name` to **"Rando"** on create; update when visitor supplies `visitor_name` on POST `/api/chat`
-- [ ] T014 [US1] Wire `POST /api/chat` in `src/digital_twin/main.py` to persist visitor message before LLM and twin message after stream completes
-- [ ] T015 [US1] Wire `GET /api/chat` in `src/digital_twin/main.py` to load history from `conversation_store` when `DATABASE_URL` set (keep GCS fallback when unset)
-- [ ] T016 [US1] Add `GET /api/conversations/{conversation_id}` with optional `?after=` in `src/digital_twin/main.py` per `contracts/openapi.yaml`
-- [ ] T017 [US1] Update `src/digital_twin/llm.py` to build labeled transcript from DB roles (`visitor`, `twin`, `owner`) for generation input
-- [ ] T018 [US1] Add message length clamp (20_000 chars) in `src/digital_twin/main.py` matching spec FR-017
-- [ ] T019 [P] [US1] Add unit tests for store CRUD and ordering in `tests/test_conversation_store.py`
-- [ ] T020 [P] [US1] Extend `tests/test_chat_post.py` to assert messages persist when test DB/fixture available
+- [x] T013 [US1] Implement `insert_message`, `get_messages`, `ensure_conversation` in `src/digital_twin/conversation_store.py`; default `visitor_name` to **"Rando"** on create; update when visitor supplies `visitor_name` on POST `/api/chat`
+- [x] T014 [US1] Wire `POST /api/chat` in `src/digital_twin/main.py` to persist visitor message before LLM and twin message after stream completes
+- [x] T015 [US1] Wire `GET /api/chat` in `src/digital_twin/main.py` to load history from `conversation_store` when `DATABASE_URL` set (keep GCS fallback when unset)
+- [x] T016 [US1] Add `GET /api/conversations/{conversation_id}` with optional `?after=` in `src/digital_twin/main.py` per `contracts/openapi.yaml`
+- [x] T017 [US1] Update `src/digital_twin/llm.py` to build labeled transcript from DB roles (`visitor`, `twin`, `owner`) for generation input
+- [x] T018 [US1] Add message length clamp (20_000 chars) in `src/digital_twin/main.py` matching spec FR-017
+- [x] T019 [P] [US1] Add unit tests for store CRUD and ordering in `tests/test_conversation_store.py`
+- [x] T020 [P] [US1] Extend `tests/test_chat_post.py` to assert messages persist when test DB/fixture available
 
 **Checkpoint**: Public chat persists and reloads without admin features.
 
@@ -70,13 +70,13 @@
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Implement `list_conversations` and `open_conversation` (mark read, clear attention) in `src/digital_twin/conversation_store.py`
-- [ ] T022 [US2] Create `src/digital_twin/admin_routes.py` with `GET /admin/conversations` and `GET /admin/conversations/{id}` per OpenAPI
-- [ ] T023 [US2] Add OAuth routes `GET /admin/auth/google` and `GET /admin/auth/google/callback` in `src/digital_twin/admin_routes.py`
-- [ ] T024 [US2] Add `GET /admin/me`, `POST /admin/logout`, and `require_admin` dependency in `src/digital_twin/admin_auth.py`
-- [ ] T025 [US2] Register admin router and auth dependencies in `src/digital_twin/main.py`
-- [ ] T026 [P] [US2] Add tests for allowlist pass/fail, 2-hour session expiry, and cookie session in `tests/test_admin_auth.py`
-- [ ] T027 [P] [US2] Add tests for inbox list and open in `tests/test_admin_routes.py`
+- [x] T021 [US2] Implement `list_conversations` and `open_conversation` (mark read, clear attention) in `src/digital_twin/conversation_store.py`
+- [x] T022 [US2] Create `src/digital_twin/admin_routes.py` with `GET /admin/conversations` and `GET /admin/conversations/{id}` per OpenAPI
+- [x] T023 [US2] Add OAuth routes `GET /admin/auth/google` and `GET /admin/auth/google/callback` in `src/digital_twin/admin_routes.py`
+- [x] T024 [US2] Add `GET /admin/me`, `POST /admin/logout`, and `require_admin` dependency in `src/digital_twin/admin_auth.py`
+- [x] T025 [US2] Register admin router and auth dependencies in `src/digital_twin/main.py`
+- [x] T026 [P] [US2] Add tests for allowlist pass/fail, 2-hour session expiry, and cookie session in `tests/test_admin_auth.py`
+- [x] T027 [P] [US2] Add tests for inbox list and open in `tests/test_admin_routes.py`
 
 **Checkpoint**: Owner can authenticate and browse conversations; no reply compose yet.
 
@@ -90,10 +90,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T028 [US3] Implement `insert_owner_message` in `src/digital_twin/conversation_store.py`
-- [ ] T029 [US3] Add `POST /admin/conversations/{id}/messages` and `POST /admin/conversations/{id}/resolve` in `src/digital_twin/admin_routes.py`
-- [ ] T030 [US3] Update `src/digital_twin/llm.py` system/transcript rules so owner messages are authoritative and never contradicted (FR-014)
-- [ ] T031 [P] [US3] Add admin reply and resolve tests in `tests/test_admin_routes.py`
+- [x] T028 [US3] Implement `insert_owner_message` in `src/digital_twin/conversation_store.py`
+- [x] T029 [US3] Add `POST /admin/conversations/{id}/messages` and `POST /admin/conversations/{id}/resolve` in `src/digital_twin/admin_routes.py`
+- [x] T030 [US3] Update `src/digital_twin/llm.py` system/transcript rules so owner messages are authoritative and never contradicted (FR-014)
+- [x] T031 [P] [US3] Add admin reply and resolve tests in `tests/test_admin_routes.py`
 - [ ] T032 [P] [US3] Create admin shell in `ak47.github.io/no_ego/src/components/digital-twin-admin-layout.js` with shared nav **Conversations | Instructions | Archive** (FR-022a; see frontend requirements §5.2) plus login gate on `ak47.github.io/no_ego/src/pages/digital-twin-admin.js`
 - [ ] T033 [US3] Extend `ak47.github.io/no_ego/src/utils/digitalTwinApi.js` with `adminGoogleSignIn`, `adminMe`, `adminListConversations`, `adminGetConversation` using `credentials: 'include'`
 - [ ] T034 [US3] Build thread view + reply composer + resolve action in `ak47.github.io/no_ego/src/components/digital-twin-admin-thread.js`
@@ -110,12 +110,12 @@
 
 ### Implementation for User Story 4
 
-- [ ] T035 [US4] Create `src/digital_twin/escalation_email.py` reusing Gmail send from `src/digital_twin/session_digest.py`
-- [ ] T036 [US4] Add `set_needs_attention` and `last_escalation_email_at` update logic in `src/digital_twin/conversation_store.py`
-- [ ] T037 [US4] Implement escalation trigger on twin turn (notify_owner tool or post-generation hook) in `src/digital_twin/llm.py` and `src/digital_twin/main.py`
-- [ ] T038 [US4] Call `escalation_email.send` with debounce window from settings after flagging conversation
-- [ ] T039 [P] [US4] Add tests for debounce and needs_attention flag in `tests/test_escalation_email.py`
-- [ ] T040 [P] [US4] Add Terraform log-based alert for `escalation_email_failed` in `terraform/alerts.tf` if not covered by existing ERROR policy
+- [x] T035 [US4] Create `src/digital_twin/escalation_email.py` reusing Gmail send from `src/digital_twin/session_digest.py`
+- [x] T036 [US4] Add `set_needs_attention` and `last_escalation_email_at` update logic in `src/digital_twin/conversation_store.py`
+- [x] T037 [US4] Implement escalation trigger on twin turn (notify_owner tool or post-generation hook) in `src/digital_twin/llm.py` and `src/digital_twin/main.py`
+- [x] T038 [US4] Call `escalation_email.send` with debounce window from settings after flagging conversation
+- [x] T039 [P] [US4] Add tests for debounce and needs_attention flag in `tests/test_escalation_email.py`
+- [x] T040 [P] [US4] Add Terraform log-based alert for `escalation_email_failed` in `terraform/alerts.tf` if not covered by existing ERROR policy
 
 **Checkpoint**: Owner receives email on escalation; inbox shows needs-attention badge.
 
@@ -129,7 +129,7 @@
 
 ### Implementation for User Story 5
 
-- [ ] T041 [US5] Verify `GET /api/conversations/{id}?after=` returns only new rows with stable ordering in `src/digital_twin/conversation_store.py` (fix gaps if any from US1)
+- [x] T041 [US5] Verify `GET /api/conversations/{id}?after=` returns only new rows with stable ordering in `src/digital_twin/conversation_store.py` (fix gaps if any from US1)
 - [ ] T042 [US5] Add `pollMessages` to `ak47.github.io/no_ego/src/utils/digitalTwinApi.js` calling `/api/conversations/{id}?after=`
 - [ ] T043 [US5] Implement tiered polling ladder (10s / 30s / 2m / 5m) in `ak47.github.io/no_ego/src/components/digital-twin-chat.js`
 - [ ] T044 [US5] Render `owner` role with distinct styling in `ak47.github.io/no_ego/src/components/digital-twin-chat.js`
@@ -147,11 +147,11 @@
 
 ### Implementation for User Story 6
 
-- [ ] T046 [US6] Implement `get_additional_instructions` and `save_additional_instructions` in `src/digital_twin/conversation_store.py` (`owner_settings` row)
-- [ ] T047 [US6] Add `GET /admin/instructions` and `PUT /admin/instructions` in `src/digital_twin/admin_routes.py` per OpenAPI
-- [ ] T048 [US6] Load instructions fresh each turn and append as final system section in `src/digital_twin/llm.py` (FR-022)
-- [ ] T049 [US6] Enforce max instructions size (32_000 chars) with clear API error in `src/digital_twin/admin_routes.py`
-- [ ] T050 [P] [US6] Add instructions GET/PUT tests in `tests/test_admin_routes.py`
+- [x] T046 [US6] Implement `get_additional_instructions` and `save_additional_instructions` in `src/digital_twin/conversation_store.py` (`owner_settings` row)
+- [x] T047 [US6] Add `GET /admin/instructions` and `PUT /admin/instructions` in `src/digital_twin/admin_routes.py` per OpenAPI
+- [x] T048 [US6] Load instructions fresh each turn and append as final system section in `src/digital_twin/llm.py` (FR-022)
+- [x] T049 [US6] Enforce max instructions size (32_000 chars) with clear API error in `src/digital_twin/admin_routes.py`
+- [x] T050 [P] [US6] Add instructions GET/PUT tests in `tests/test_admin_routes.py`
 - [ ] T051 [US6] Add Instructions tab content (Markdown textarea + save) routed through `digital-twin-admin-layout.js` in `ak47.github.io/no_ego/src/pages/digital-twin-admin-instructions.js`
 - [ ] T052 [US6] Add `adminGetInstructions` and `adminSaveInstructions` to `ak47.github.io/no_ego/src/utils/digitalTwinApi.js`
 
@@ -167,10 +167,10 @@
 
 ### Implementation for User Story 7
 
-- [ ] T053 [US7] Add `scripts/sql/002_archive_messages.sql` for `archive_messages` table per `data-model.md`
-- [ ] T054 [US7] Implement `archive_conversation`, `restore_conversation`, `bulk_archive_idle`, and `export_messages_jsonl` in `src/digital_twin/conversation_store.py`
-- [ ] T055 [US7] Add P3 admin routes (`/admin/conversations/export`, archive, restore, bulk) in `src/digital_twin/admin_routes.py`
-- [ ] T056 [P] [US7] Add archive/export tests in `tests/test_admin_archive.py`
+- [x] T053 [US7] Add `scripts/sql/002_archive_messages.sql` for `archive_messages` table per `data-model.md`
+- [x] T054 [US7] Implement `archive_conversation`, `restore_conversation`, `bulk_archive_idle`, and `export_messages_jsonl` in `src/digital_twin/conversation_store.py`
+- [x] T055 [US7] Add P3 admin routes (`/admin/conversations/export`, archive, restore, bulk) in `src/digital_twin/admin_routes.py`
+- [x] T056 [P] [US7] Add archive/export tests in `tests/test_admin_archive.py`
 - [ ] T057 [US7] Add Archive tab, download button, and bulk archive UI in `ak47.github.io/no_ego/src/pages/digital-twin-admin-archive.js`
 
 **Checkpoint**: Operational backup and inbox hygiene without data loss.
@@ -181,11 +181,11 @@
 
 **Purpose**: Docs, rate limits, observability, and production validation.
 
-- [ ] T058 [P] Implement DB-backed per-conversation rate limit in `src/digital_twin/rate_limit.py` when `DATABASE_URL` set (FR-018)
-- [ ] T059 [P] Update `docs/architecture.md` with Cloud SQL, admin OAuth, and escalation email flows
-- [ ] T060 Update root `README.md` with admin OAuth setup, allowlist, and local Postgres quickstart link to `specs/001-conversation-persistence-admin/quickstart.md`
+- [x] T058 [P] Implement DB-backed per-conversation rate limit in `src/digital_twin/rate_limit.py` when `DATABASE_URL` set (FR-018)
+- [x] T059 [P] Update `docs/architecture.md` with Cloud SQL, admin OAuth, and escalation email flows
+- [x] T060 Update root `README.md` with admin OAuth setup, allowlist, and local Postgres quickstart link to `specs/001-conversation-persistence-admin/quickstart.md`
 - [ ] T061 [P] Update `ak47.github.io/docs/digital-twin-001-frontend-requirements.md` checkboxes for completed phases
-- [ ] T062 Run full `uv run pytest -q tests` and fix regressions
+- [x] T062 Run full `uv run pytest -q tests` and fix regressions
 - [ ] T063 Execute production smoke checklist in `specs/001-conversation-persistence-admin/quickstart.md` §9
 
 ---

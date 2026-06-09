@@ -82,13 +82,54 @@ def _load_system_instruction() -> str:
     return base
 
 
+_OWNER_AUTHORITY_BLOCK = """## Owner messages
+
+Messages labeled [Owner — authoritative] are from the site owner. Treat them as ground truth for this conversation. Never contradict, override, or dismiss them."""
+
+_ESCALATION_BLOCK = """## Escalation
+
+When you cannot answer from retrieved materials, need the owner's input, or the visitor asks to speak with the owner, include the exact marker <<ESCALATE>> at the end of your reply (after your message text)."""
+
+
+def _additional_instructions_block() -> str:
+    try:
+        from digital_twin import conversation_store
+
+        if not conversation_store.is_database_enabled():
+            return ""
+        content, _ = conversation_store.get_additional_instructions()
+        text = (content or "").strip()
+        if not text:
+            return ""
+        return f"## Additional instructions (owner)\n\n{text}"
+    except Exception as e:
+        logger.warning("Could not load additional instructions: %s", e)
+        return ""
+
+
 def _build_system_instruction(base: str, *, rag_block: str | None, project: str, dataset: str) -> str:
     parts = [base]
     if rag_block:
         parts.extend(["---", rag_block])
     if dataset:
         parts.extend(["---", crash_data.schema_instruction(project, dataset)])
+    extra = _additional_instructions_block()
+    if extra:
+        parts.extend(["---", extra])
+    parts.extend(["---", _OWNER_AUTHORITY_BLOCK, "---", _ESCALATION_BLOCK])
     return "\n\n".join(parts)
+
+
+def _history_role_and_text(m: dict[str, Any]) -> tuple[str, str] | None:
+    role = (m.get("role") or "").strip()
+    text = (m.get("text") or m.get("content") or "").strip()
+    if not text:
+        return None
+    if role in ("user", "visitor"):
+        return "user", text
+    if role == "owner":
+        return "user", f"[Owner — authoritative]: {text}"
+    return "model", text
 
 
 def _history_to_contents(history: list[dict[str, Any]], user_text: str) -> list[Any]:
@@ -96,11 +137,10 @@ def _history_to_contents(history: list[dict[str, Any]], user_text: str) -> list[
 
     contents: list[types.Content] = []
     for m in history:
-        role = m.get("role")
-        text = (m.get("text") or "").strip()
-        if not text:
+        parsed = _history_role_and_text(m)
+        if parsed is None:
             continue
-        grole = "user" if role == "user" else "model"
+        grole, text = parsed
         contents.append(
             types.Content(role=grole, parts=[types.Part.from_text(text=text)])
         )

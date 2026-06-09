@@ -59,6 +59,30 @@ resource "google_logging_metric" "digest_job_errors" {
   ]
 }
 
+resource "google_logging_metric" "escalation_email_failed" {
+  count = local.alerts_enabled ? 1 : 0
+
+  project = var.project_id
+  name    = "${var.name_prefix}_escalation_email_failed"
+
+  filter = join(" ", [
+    "resource.type=\"cloud_run_revision\"",
+    "resource.labels.service_name=\"${var.name_prefix}-api\"",
+    "jsonPayload.event=\"escalation_email_failed\"",
+  ])
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "${var.name_prefix} escalation email failures"
+  }
+
+  depends_on = [
+    google_project_service.required,
+  ]
+}
+
 resource "google_logging_metric" "chat_model_invocation_failed" {
   count = local.alerts_enabled ? 1 : 0
 
