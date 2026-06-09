@@ -103,7 +103,7 @@ uv run pytest -q tests/test_conversation_store.py tests/test_admin_auth.py tests
 
 ## 9. Production smoke (post-deploy)
 
-1. Chat on https://no-ego.net About page → message persists on reload.
+1. Chat on <https://no-ego.net> About page → message persists on reload.
 2. Google sign-in on admin route with allowlisted account → inbox shows thread.
 3. Owner reply → visitor sees within poll interval.
 
