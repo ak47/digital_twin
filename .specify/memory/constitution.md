@@ -27,7 +27,7 @@ MUST be defined and changed through Terraform in `terraform/`. Manual console ch
 that drift from Terraform state are prohibited unless followed immediately by a
 Terraform commit that restores the desired state. GitHub Actions workflows MUST
 align with Terraform outputs (WIF, remote state bucket, CORS, corpus resource
-names, database connection settings).
+names, database connection settings)
 
 **Rationale**: Prevents environment drift between local, CI, and production; keeps
 deploy and ingest workflows reproducible.
