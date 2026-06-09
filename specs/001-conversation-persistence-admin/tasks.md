@@ -30,10 +30,10 @@
 
 - [ ] T005 Add `terraform/cloud_sql.tf` (PostgreSQL instance, database, user, Secret Manager password, IAM for Cloud Run)
 - [ ] T006 Update `terraform/cloud_run.tf` with Cloud SQL connector annotation, `DATABASE_URL`, OAuth secrets, `ADMIN_ALLOWED_EMAILS`, and escalation email env
-- [ ] T007 [P] Document Cloud SQL operator steps in `terraform/README.md` (apply order, local proxy, secret wiring)
+- [ ] T007 [P] Document Cloud SQL operator steps in `terraform/README.md` (apply order, local proxy, secret wiring); note that **`deploy-api.yml` updates image + app env only**—`DATABASE_URL` and OAuth env are **Terraform-managed** (same pattern as `RAG_CORPUS_RESOURCE`), so no deploy-workflow change required unless env vars are later moved to CI
 - [ ] T008 Extend `src/digital_twin/settings.py` with `database_url`, OAuth, allowlist, session secret, and escalation settings
 - [ ] T009 Create `src/digital_twin/conversation_store.py` with SQLAlchemy engine/session factory and health check when `DATABASE_URL` set
-- [ ] T010 Create `src/digital_twin/admin_auth.py` with Google OAuth helpers, allowlist check, and signed `dt_admin` cookie (itsdangerous)
+- [ ] T010 Create `src/digital_twin/admin_auth.py` with Google OAuth helpers, allowlist check, and signed `dt_admin` cookie (itsdangerous) with **2-hour** session TTL (FR-005c: `max_age` on cookie + serializer validation)
 - [ ] T011 Update `src/digital_twin/main.py` to set `allow_credentials=True` on CORSMiddleware and mount placeholder admin router
 - [ ] T012 [P] Add structured log event names for new failure paths in `src/digital_twin/structured_logging.py` or module docstrings per plan.md
 
@@ -49,7 +49,7 @@
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Implement `insert_message`, `get_messages`, `ensure_conversation` in `src/digital_twin/conversation_store.py`
+- [ ] T013 [US1] Implement `insert_message`, `get_messages`, `ensure_conversation` in `src/digital_twin/conversation_store.py`; default `visitor_name` to **"Rando"** on create; update when visitor supplies `visitor_name` on POST `/api/chat`
 - [ ] T014 [US1] Wire `POST /api/chat` in `src/digital_twin/main.py` to persist visitor message before LLM and twin message after stream completes
 - [ ] T015 [US1] Wire `GET /api/chat` in `src/digital_twin/main.py` to load history from `conversation_store` when `DATABASE_URL` set (keep GCS fallback when unset)
 - [ ] T016 [US1] Add `GET /api/conversations/{conversation_id}` with optional `?after=` in `src/digital_twin/main.py` per `contracts/openapi.yaml`
@@ -75,7 +75,7 @@
 - [ ] T023 [US2] Add OAuth routes `GET /admin/auth/google` and `GET /admin/auth/google/callback` in `src/digital_twin/admin_routes.py`
 - [ ] T024 [US2] Add `GET /admin/me`, `POST /admin/logout`, and `require_admin` dependency in `src/digital_twin/admin_auth.py`
 - [ ] T025 [US2] Register admin router and auth dependencies in `src/digital_twin/main.py`
-- [ ] T026 [P] [US2] Add tests for allowlist pass/fail and cookie session in `tests/test_admin_auth.py`
+- [ ] T026 [P] [US2] Add tests for allowlist pass/fail, 2-hour session expiry, and cookie session in `tests/test_admin_auth.py`
 - [ ] T027 [P] [US2] Add tests for inbox list and open in `tests/test_admin_routes.py`
 
 **Checkpoint**: Owner can authenticate and browse conversations; no reply compose yet.
@@ -94,7 +94,7 @@
 - [ ] T029 [US3] Add `POST /admin/conversations/{id}/messages` and `POST /admin/conversations/{id}/resolve` in `src/digital_twin/admin_routes.py`
 - [ ] T030 [US3] Update `src/digital_twin/llm.py` system/transcript rules so owner messages are authoritative and never contradicted (FR-014)
 - [ ] T031 [P] [US3] Add admin reply and resolve tests in `tests/test_admin_routes.py`
-- [ ] T032 [P] [US3] Create admin login + Conversations inbox page in `ak47.github.io/no_ego/src/pages/digital-twin-admin.js` (or equivalent Gatsby route)
+- [ ] T032 [P] [US3] Create admin shell in `ak47.github.io/no_ego/src/components/digital-twin-admin-layout.js` with shared nav **Conversations | Instructions | Archive** (FR-022a; see frontend requirements §5.2) plus login gate on `ak47.github.io/no_ego/src/pages/digital-twin-admin.js`
 - [ ] T033 [US3] Extend `ak47.github.io/no_ego/src/utils/digitalTwinApi.js` with `adminGoogleSignIn`, `adminMe`, `adminListConversations`, `adminGetConversation` using `credentials: 'include'`
 - [ ] T034 [US3] Build thread view + reply composer + resolve action in `ak47.github.io/no_ego/src/components/digital-twin-admin-thread.js`
 
@@ -152,7 +152,7 @@
 - [ ] T048 [US6] Load instructions fresh each turn and append as final system section in `src/digital_twin/llm.py` (FR-022)
 - [ ] T049 [US6] Enforce max instructions size (32_000 chars) with clear API error in `src/digital_twin/admin_routes.py`
 - [ ] T050 [P] [US6] Add instructions GET/PUT tests in `tests/test_admin_routes.py`
-- [ ] T051 [US6] Add Instructions tab (Markdown textarea + save) to admin nav in `ak47.github.io/no_ego/src/pages/digital-twin-admin.js`
+- [ ] T051 [US6] Add Instructions tab content (Markdown textarea + save) routed through `digital-twin-admin-layout.js` in `ak47.github.io/no_ego/src/pages/digital-twin-admin-instructions.js`
 - [ ] T052 [US6] Add `adminGetInstructions` and `adminSaveInstructions` to `ak47.github.io/no_ego/src/utils/digitalTwinApi.js`
 
 **Checkpoint**: Owner can steer twin behavior without redeploy.

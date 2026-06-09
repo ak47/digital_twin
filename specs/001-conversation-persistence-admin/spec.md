@@ -150,7 +150,7 @@ The owner can export all active conversations to a portable file for backup or a
 - **FR-005**: System MUST authenticate admin users via Google account sign-in; unauthenticated access to admin capabilities MUST be denied.
 - **FR-005a**: System MUST maintain a hardcoded allowlist of permitted Google account email addresses; only sign-ins whose verified email is on the allowlist MAY receive an admin session.
 - **FR-005b**: System MUST reject allowlist failures after successful Google authentication (fail closed); MUST NOT issue admin sessions to non-allowlisted emails.
-- **FR-005c**: Admin sessions MUST expire after a reasonable period; expired sessions MUST require re-authentication via Google sign-in.
+- **FR-005c**: Admin sessions MUST expire after **2 hours**; expired sessions MUST require re-authentication via Google sign-in.
 - **FR-006**: System MUST provide an admin inbox listing all conversations with summary fields: identifier, optional display name, preview, last activity time, message count, unread indicator, and needs-attention indicator.
 - **FR-007**: System MUST allow the owner to open a conversation and view the complete transcript.
 - **FR-008**: System MUST allow the owner to post a message into a conversation that is stored with the owner role and visible to the visitor.
@@ -203,7 +203,7 @@ The owner can export all active conversations to a portable file for backup or a
 
 - The public chat UI remains in the separate **ak47.github.io** (`no_ego`) repository; this feature defines API contracts and admin experience requirements that both repos must satisfy.
 - Admin access is limited to Google accounts on a hardcoded email allowlist (initially the site owner; additional addresses require a configuration change and deploy). No shared password; no multi-tenant role model beyond allowlist membership in this phase.
-- Visitors are anonymous; identity is limited to an optional display name and browser-stored conversation id.
+- Visitors are anonymous; identity is limited to an optional display name and browser-stored conversation id. New conversations default to display name **"Rando"** until the visitor provides a different name (via optional UI field or `visitor_name` on chat POST).
 - The existing Vertex-based twin and optional RAG retrieval remain the generation backend; this feature changes persistence and human-in-the-loop workflow, not the core model provider.
 - Message-level relational storage uses **Cloud SQL PostgreSQL** per constitution v1.1.0+ (Technology & Platform Constraints). GCS remains for RAG corpus and optional legacy session/digest paths.
 - Escalation alerts are delivered by **email** (reusing or extending the existing Gmail/Workspace sending path used for idle session digests). The idle digest remains for inactive threads; escalation email is immediate on needs-attention.

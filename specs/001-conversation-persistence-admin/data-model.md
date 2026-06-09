@@ -46,7 +46,7 @@ P3 adds `archive_messages` (same columns as `messages`).
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | `UUID` PK | Client `X-Session-Id` / `conversation_id` |
-| `visitor_name` | `TEXT` NULL | Optional display name from first message |
+| `visitor_name` | `TEXT` NOT NULL DEFAULT `'Rando'` | Display name; default **Rando** until visitor provides `visitor_name` on chat POST |
 | `last_activity_at` | `TIMESTAMPTZ` NOT NULL | Updated on every message |
 | `needs_attention` | `BOOLEAN` NOT NULL DEFAULT false | Conversation-level escalation flag |
 | `last_escalation_email_at` | `TIMESTAMPTZ` NULL | Debounce escalation emails |

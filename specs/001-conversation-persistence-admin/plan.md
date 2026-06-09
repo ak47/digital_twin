@@ -135,6 +135,7 @@ tests/
 | `DATABASE_URL` | PostgreSQL connection (Cloud SQL on Run) |
 | `ADMIN_ALLOWED_EMAILS` | Comma-separated allowlist |
 | `ADMIN_SESSION_SECRET` | Cookie signing (Secret Manager) |
+| `ADMIN_SESSION_MAX_AGE_SECONDS` | Default `7200` (2 hours, FR-005c) |
 | `GOOGLE_OAUTH_CLIENT_ID` | OAuth |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth (Secret Manager) |
 | `ADMIN_OAUTH_REDIRECT_URI` | Callback URL |
