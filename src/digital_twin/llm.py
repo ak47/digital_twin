@@ -17,7 +17,7 @@ from digital_twin.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-_MAX_CRASH_TOOL_ROUNDS = 4
+_MAX_CRASH_TOOL_ROUNDS = 8
 
 # When RAG is configured but retrieval returns no chunks, the model must not fill gaps from priors.
 _RAG_EMPTY_RETRIEVAL_BLOCK = """## Retrieved documents (RAG)
@@ -121,7 +121,7 @@ def _generate_with_crash_tools(
 ) -> str:
     from google.genai import types
 
-    for _ in range(_MAX_CRASH_TOOL_ROUNDS):
+    for round_idx in range(1, _MAX_CRASH_TOOL_ROUNDS + 1):
         response = client.models.generate_content(
             model=model,
             contents=contents,
@@ -129,6 +129,11 @@ def _generate_with_crash_tools(
         )
         candidate = response.candidates[0] if response.candidates else None
         if candidate is None or candidate.content is None:
+            logger.warning(
+                "crash tool loop: empty candidate (round %s)",
+                round_idx,
+                extra={"event": "crash_tool_empty_candidate", "round": round_idx},
+            )
             return "(No model response.)"
 
         parts = candidate.content.parts or []
@@ -144,6 +149,12 @@ def _generate_with_crash_tools(
             name = getattr(fc, "name", "") or ""
             args = dict(getattr(fc, "args", None) or {})
             if name != "query_crash_data":
+                logger.warning(
+                    "crash tool loop: unknown tool %s (round %s)",
+                    name,
+                    round_idx,
+                    extra={"event": "crash_tool_unknown", "round": round_idx, "tool": name},
+                )
                 tool_parts.append(
                     types.Part.from_function_response(
                         name=name or "unknown_tool",
@@ -151,11 +162,23 @@ def _generate_with_crash_tools(
                     )
                 )
                 continue
+            sql = str(args.get("sql") or "")
+            logger.info(
+                "crash tool query (round %s)",
+                round_idx,
+                extra={"event": "crash_tool_query", "round": round_idx, "sql": sql[:2000]},
+            )
             result = crash_data.execute_query(
                 project,
                 dataset,
-                str(args.get("sql") or ""),
+                sql,
             )
+            if '"error"' in result:
+                logger.warning(
+                    "crash tool query error (round %s)",
+                    round_idx,
+                    extra={"event": "crash_tool_query_error", "round": round_idx, "result": result[:2000]},
+                )
             tool_parts.append(
                 types.Part.from_function_response(
                     name="query_crash_data",
@@ -164,6 +187,11 @@ def _generate_with_crash_tools(
             )
         contents.append(types.Content(role="user", parts=tool_parts))
 
+    logger.warning(
+        "crash tool loop exhausted after %s rounds",
+        _MAX_CRASH_TOOL_ROUNDS,
+        extra={"event": "crash_tool_rounds_exhausted", "rounds": _MAX_CRASH_TOOL_ROUNDS},
+    )
     return "(Could not finish crash data query within the allowed tool rounds.)"
 
 

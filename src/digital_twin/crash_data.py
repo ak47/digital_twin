@@ -28,6 +28,23 @@ _TABLES = (
 )
 
 
+def _qualify_table_names(sql: str, project_id: str, dataset_id: str) -> str:
+    """Qualify bare crash table ids in FROM/JOIN clauses (not string literals)."""
+    if "INFORMATION_SCHEMA" in sql.upper():
+        return sql
+    qualified = sql
+    for table in _TABLES:
+        fq = f"`{project_id}.{dataset_id}.{table}`"
+        if fq in qualified:
+            continue
+        qualified = re.sub(
+            rf"(?i)\b(FROM|JOIN)\s+{re.escape(table)}\b",
+            rf"\1 {fq}",
+            qualified,
+        )
+    return qualified
+
+
 def validate_readonly_sql(sql: str, *, max_rows: int = _DEFAULT_ROW_LIMIT) -> str:
     """Return sanitized SELECT SQL with a row cap when missing."""
     text = (sql or "").strip()
@@ -61,7 +78,7 @@ Tables (fully qualified):
 Rules:
 - Use **only** SELECT queries via the tool for live stats.
 - Prefer aggregations (`COUNT`, `GROUP BY`) over returning raw rows.
-- If unsure of exact column names, query `INFORMATION_SCHEMA.COLUMNS` for the table first.
+- California `Collision_Type_Description`, `City_Name`, `NumberKilled`, and `NumberInjured` are STRING — compare or aggregate as strings; parse dates with `PARSE_TIMESTAMP` as shown above.
 - Always include a reasonable `LIMIT` (the tool adds one if missing).
 - Answer crash questions in the first person as things **I** know from building this dataset and querying it.
 - Do **not** use crash query results as biographical facts about my career unless the user is asking about this project specifically.
@@ -80,26 +97,29 @@ def execute_query(
         return json.dumps({"error": "Crash data BigQuery dataset is not configured."})
 
     safe_sql = validate_readonly_sql(sql, max_rows=max_rows)
-    for table in _TABLES:
-        if table in safe_sql and f"{dataset_id}.{table}" not in safe_sql:
-            safe_sql = re.sub(
-                rf"(?i)\b{re.escape(table)}\b",
-                f"`{project_id}.{dataset_id}.{table}`",
-                safe_sql,
-            )
+    safe_sql = _qualify_table_names(safe_sql, project_id, dataset_id)
 
     try:
         from google.cloud import bigquery
+        import google.auth
     except ImportError:
         return json.dumps({"error": "google-cloud-bigquery is not installed."})
 
-    client = bigquery.Client(project=project_id)
+    credentials, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    if hasattr(credentials, "with_quota_project"):
+        credentials = credentials.with_quota_project(project_id)
+    client = bigquery.Client(project=project_id, credentials=credentials)
     job_config = bigquery.QueryJobConfig(maximum_bytes_billed=_MAX_BYTES_BILLED)
     try:
         job = client.query(safe_sql, job_config=job_config)
         rows = list(job.result(max_results=max_rows + 1))
     except Exception as e:
-        logger.warning("crash_data query failed: %s", e)
+        logger.warning(
+            "crash_data query failed",
+            extra={"event": "crash_data_query_failed", "sql": safe_sql, "error": str(e)},
+        )
         return json.dumps({"error": str(e), "sql": safe_sql})
 
     truncated = len(rows) > max_rows
