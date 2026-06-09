@@ -1,0 +1,389 @@
+openapi: 3.1.0
+info:
+  title: digital-twin-api (001 extensions)
+  version: 0.3.0
+  description: |
+    Public chat + admin APIs for conversation persistence and owner responses.
+    Base URL production: https://digital-twin.no-ego.net
+    Frontend coordination: ak47.github.io/docs/digital-twin-001-frontend-requirements.md
+
+servers:
+  - url: https://digital-twin.no-ego.net
+    description: Production
+  - url: http://localhost:8080
+    description: Local
+
+tags:
+  - name: public
+  - name: admin
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: dt_admin
+
+  schemas:
+    Role:
+      type: string
+      enum: [visitor, twin, owner]
+
+    Message:
+      type: object
+      required: [id, conversation_id, role, content, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        conversation_id:
+          type: string
+          format: uuid
+        conversation_name:
+          type: string
+          nullable: true
+        role:
+          $ref: '#/components/schemas/Role'
+        content:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            type: object
+          nullable: true
+        needs_attention:
+          type: boolean
+          default: false
+        read:
+          type: boolean
+          description: Owner read flag (maps to read_by_owner)
+        created_at:
+          type: string
+          format: date-time
+
+    ConversationThread:
+      type: object
+      required: [conversation_id, messages]
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        conversation_name:
+          type: string
+          nullable: true
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+
+    ConversationSummary:
+      type: object
+      required:
+        - conversation_id
+        - preview
+        - last_created_at
+        - last_id
+        - message_count
+        - unread
+        - needs_attention
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        conversation_name:
+          type: string
+          nullable: true
+        preview:
+          type: string
+        last_created_at:
+          type: string
+          format: date-time
+        last_id:
+          type: integer
+        message_count:
+          type: integer
+        unread:
+          type: boolean
+        needs_attention:
+          type: boolean
+
+    ChatPostRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          maxLength: 20000
+        visitor_name:
+          type: string
+          nullable: true
+
+    HumanMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 20000
+
+    InstructionsBody:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 32000
+
+    InstructionsResponse:
+      type: object
+      properties:
+        content:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+
+paths:
+  /health:
+    get:
+      tags: [public]
+      summary: Liveness
+      responses:
+        '200':
+          description: OK
+
+  /api/chat:
+    get:
+      tags: [public]
+      summary: Load chat history (legacy path)
+      parameters:
+        - name: X-Session-Id
+          in: header
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Message list
+          headers:
+            X-Session-Id:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+    post:
+      tags: [public]
+      summary: Send message; SSE stream twin reply
+      parameters:
+        - name: X-Session-Id
+          in: header
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatPostRequest'
+      responses:
+        '200':
+          description: text/event-stream chunks {text}, then {complete}
+        '429':
+          description: Rate limited
+
+  /api/conversations/{conversation_id}:
+    get:
+      tags: [public]
+      summary: Thread fetch or incremental poll
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: after
+          in: query
+          description: Return messages with id greater than this
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Thread
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationThread'
+
+  /admin/auth/google:
+    get:
+      tags: [admin]
+      summary: Redirect to Google OAuth consent
+      responses:
+        '302':
+          description: Redirect to Google
+
+  /admin/auth/google/callback:
+    get:
+      tags: [admin]
+      summary: OAuth callback; set session cookie if allowlisted
+      responses:
+        '302':
+          description: Redirect to admin UI
+        '403':
+          description: Email not on allowlist
+
+  /admin/logout:
+    post:
+      tags: [admin]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Session cleared
+
+  /admin/me:
+    get:
+      tags: [admin]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                  email:
+                    type: string
+        '401':
+          description: Not authenticated
+
+  /admin/conversations:
+    get:
+      tags: [admin]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Inbox summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConversationSummary'
+
+  /admin/conversations/{conversation_id}:
+    get:
+      tags: [admin]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationThread'
+
+  /admin/conversations/{conversation_id}/messages:
+    post:
+      tags: [admin]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HumanMessageRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+
+  /admin/conversations/{conversation_id}/resolve:
+    post:
+      tags: [admin]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Attention cleared
+
+  /admin/instructions:
+    get:
+      tags: [admin]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstructionsResponse'
+    put:
+      tags: [admin]
+      security:
+        - sessionCookie: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstructionsBody'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstructionsResponse'
+
+  /admin/conversations/export:
+    get:
+      tags: [admin]
+      security:
+        - sessionCookie: []
+      summary: P3 — JSONL export of active messages
+      responses:
+        '200':
+          description: application/x-ndjson attachment
