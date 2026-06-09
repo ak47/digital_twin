@@ -14,7 +14,9 @@ uploads to the Terraform-managed bucket, and loads BigQuery tables. No local ste
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -28,48 +30,97 @@ FILE_TABLE_MAP: dict[str, str] = {
     "2025injuredwitnesspassengers.csv": "ca_injuredwitnesspassengers",
 }
 
-# Public open-data URLs (NYC Open Data + California CCRS on data.ca.gov)
-DEFAULT_SOURCE_URLS: dict[str, str] = {
-    "Motor_Vehicle_Collisions_-_Crashes_20251007.csv": (
-        "https://data.cityofnewyork.us/api/views/h9gi-n95q/rows.csv?accessType=DOWNLOAD"
-    ),
+# NYC Open Data: Motor Vehicle Collisions - Crashes (dataset id h9gi-nx95)
+NYC_CRASHES_DOWNLOAD_URL = (
+    "https://data.cityofnewyork.us/api/views/h9gi-nx95/rows.csv?accessType=DOWNLOAD"
+)
+
+CA_CCRS_PACKAGE_API = "https://data.ca.gov/api/3/action/package_show?id=ccrs"
+
+# data.ca.gov resource display name -> local canonical filename
+CA_RESOURCE_NAME_TO_FILE: dict[str, str] = {
+    "Crashes_2025": "2025crashes.csv",
+    "Parties_2025": "2025parties.csv",
+    "InjuredWitnessPassengers_2025": "2025injuredwitnesspassengers.csv",
+}
+
+# Used when the CKAN API is unreachable
+CA_FALLBACK_URLS: dict[str, str] = {
     "2025crashes.csv": (
         "https://data.ca.gov/dataset/80c6a49d-c6b3-40ba-86d8-379c9741b4be/resource/"
-        "9f4fc839-122d-4595-a146-43bc4ed16f46/download/"
+        "9f4fc839-122d-4595-a146-43bc4ed16f46/download/crashes_2025.csv"
     ),
     "2025parties.csv": (
         "https://data.ca.gov/dataset/80c6a49d-c6b3-40ba-86d8-379c9741b4be/resource/"
-        "a2676918-a825-4b77-8e5c-6eadb38d6b1a/download/"
+        "a2676918-a825-4b77-8e5c-6eadb38d6b1a/download/parties_2025.csv"
     ),
     "2025injuredwitnesspassengers.csv": (
         "https://data.ca.gov/dataset/80c6a49d-c6b3-40ba-86d8-379c9741b4be/resource/"
-        "10184ea3-7411-42d8-87a6-17039b58f04b/download/"
+        "10184ea3-7411-42d8-87a6-17039b58f04b/download/injuredwitnesspassengers_2025.csv"
     ),
 }
 
+_USER_AGENT = "digital-twin-crash-loader/1.0"
 GCS_PREFIX = "crash-sources"
 _DOWNLOAD_CHUNK_BYTES = 8 * 1024 * 1024
+
+
+def resolve_download_urls() -> dict[str, str]:
+    """Resolve open-data download URLs for all canonical CSV files."""
+    urls: dict[str, str] = {
+        "Motor_Vehicle_Collisions_-_Crashes_20251007.csv": NYC_CRASHES_DOWNLOAD_URL,
+    }
+
+    try:
+        req = urllib.request.Request(
+            CA_CCRS_PACKAGE_API,
+            headers={"User-Agent": _USER_AGENT},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            payload = json.load(resp)
+        for resource in payload.get("result", {}).get("resources", []):
+            name = (resource.get("name") or "").strip()
+            local_name = CA_RESOURCE_NAME_TO_FILE.get(name)
+            url = (resource.get("url") or "").strip()
+            if local_name and url:
+                urls[local_name] = url
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, KeyError) as exc:
+        print(f"warning: California URL lookup failed ({exc}); using fallback URLs")
+
+    for local_name, fallback_url in CA_FALLBACK_URLS.items():
+        urls.setdefault(local_name, fallback_url)
+
+    missing = [name for name in FILE_TABLE_MAP if name not in urls]
+    if missing:
+        raise RuntimeError(f"Missing download URLs for: {', '.join(missing)}")
+    return urls
 
 
 def download_sources(dest_dir: Path, urls: dict[str, str] | None = None) -> Path:
     """Download canonical CSV files from open-data URLs into dest_dir."""
     dest_dir.mkdir(parents=True, exist_ok=True)
-    source_urls = urls or DEFAULT_SOURCE_URLS
+    source_urls = urls or resolve_download_urls()
     for filename in FILE_TABLE_MAP:
-        url = source_urls.get(filename)
-        if not url:
-            raise KeyError(f"No download URL configured for {filename}")
+        url = source_urls[filename]
         dest = dest_dir / filename
         print(f"Downloading {url}")
         print(f"  -> {dest}")
-        req = urllib.request.Request(url, headers={"User-Agent": "digital-twin-crash-loader/1.0"})
-        with urllib.request.urlopen(req, timeout=600) as resp, dest.open("wb") as out:
-            while True:
-                chunk = resp.read(_DOWNLOAD_CHUNK_BYTES)
-                if not chunk:
-                    break
-                out.write(chunk)
-        print(f"  saved {dest.stat().st_size:,} bytes")
+        req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=600) as resp, dest.open("wb") as out:
+                while True:
+                    chunk = resp.read(_DOWNLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(
+                f"Download failed for {filename}: HTTP {exc.code} from {url}"
+            ) from exc
+        size = dest.stat().st_size
+        if size == 0:
+            raise RuntimeError(f"Download failed for {filename}: empty file from {url}")
+        print(f"  saved {size:,} bytes")
     return dest_dir
 
 
