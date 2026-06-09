@@ -179,6 +179,8 @@ def load_table(
         allow_quoted_newlines=True,
         allow_jagged_rows=True,
         ignore_unknown_values=True,
+        # California CCRS CSVs prefix many headers with tab characters (e.g. "\tReport Number").
+        column_name_character_map="V2",
     )
     print(f"Loading {gcs_uri} -> {table_ref}")
     job = client.load_table_from_uri(gcs_uri, table_ref, job_config=job_config)

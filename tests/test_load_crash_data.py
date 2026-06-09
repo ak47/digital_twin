@@ -64,3 +64,26 @@ def test_normalize_redirect_url_strips_s3_port() -> None:
     assert mod.normalize_redirect_url(raw) == (
         "https://s3.amazonaws.com/bucket/key?X-Amz-Signature=abc"
     )
+
+
+def test_load_table_uses_column_name_character_map_v2(monkeypatch) -> None:
+    mod = _load_script()
+    captured: dict[str, object] = {}
+
+    class FakeJob:
+        def result(self):
+            return None
+
+    class FakeClient:
+        def load_table_from_uri(self, uri, table_ref, job_config):  # noqa: ARG002
+            captured["job_config"] = job_config
+            return FakeJob()
+
+        def get_table(self, table_ref):  # noqa: ARG002
+            class T:
+                num_rows = 1
+
+            return T()
+
+    mod.load_table(FakeClient(), "proj", "vehicle_crashes", "ca_crashes", "gs://b/f.csv")
+    assert captured["job_config"].column_name_character_map == "V2"
