@@ -65,6 +65,36 @@ GCS_PREFIX = "crash-sources"
 _DOWNLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 
 
+def normalize_redirect_url(url: str) -> str:
+    """Fix data.ca.gov redirects that break AWS SigV4 presigned URLs in urllib."""
+    return url.replace("s3.amazonaws.com:443", "s3.amazonaws.com")
+
+
+def _download_opener() -> urllib.request.OpenerDirector:
+    class _OpenDataRedirectHandler(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ARG002
+            return super().redirect_request(
+                req, fp, code, msg, headers, normalize_redirect_url(newurl)
+            )
+
+    return urllib.request.build_opener(_OpenDataRedirectHandler())
+
+
+def download_file(url: str, dest: Path, *, opener: urllib.request.OpenerDirector | None = None) -> int:
+    """Stream url to dest; return bytes written."""
+    client = opener or _download_opener()
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    with client.open(req, timeout=600) as resp, dest.open("wb") as out:
+        total = 0
+        while True:
+            chunk = resp.read(_DOWNLOAD_CHUNK_BYTES)
+            if not chunk:
+                break
+            out.write(chunk)
+            total += len(chunk)
+    return total
+
+
 def resolve_download_urls() -> dict[str, str]:
     """Resolve open-data download URLs for all canonical CSV files."""
     urls: dict[str, str] = {
@@ -105,19 +135,12 @@ def download_sources(dest_dir: Path, urls: dict[str, str] | None = None) -> Path
         dest = dest_dir / filename
         print(f"Downloading {url}")
         print(f"  -> {dest}")
-        req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         try:
-            with urllib.request.urlopen(req, timeout=600) as resp, dest.open("wb") as out:
-                while True:
-                    chunk = resp.read(_DOWNLOAD_CHUNK_BYTES)
-                    if not chunk:
-                        break
-                    out.write(chunk)
+            size = download_file(url, dest)
         except urllib.error.HTTPError as exc:
             raise RuntimeError(
                 f"Download failed for {filename}: HTTP {exc.code} from {url}"
             ) from exc
-        size = dest.stat().st_size
         if size == 0:
             raise RuntimeError(f"Download failed for {filename}: empty file from {url}")
         print(f"  saved {size:,} bytes")

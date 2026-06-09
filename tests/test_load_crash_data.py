@@ -53,3 +53,14 @@ def test_resolve_download_urls_includes_nyc(monkeypatch) -> None:
         == mod.NYC_CRASHES_DOWNLOAD_URL
     )
     assert "crashes_2025.csv" in urls["2025crashes.csv"]
+
+
+def test_normalize_redirect_url_strips_s3_port() -> None:
+    mod = _load_script()
+    raw = (
+        "https://s3.amazonaws.com:443/bucket/key?"
+        "X-Amz-Signature=abc"
+    )
+    assert mod.normalize_redirect_url(raw) == (
+        "https://s3.amazonaws.com/bucket/key?X-Amz-Signature=abc"
+    )
