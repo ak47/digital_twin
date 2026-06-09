@@ -14,6 +14,7 @@ Pair this API with any static frontend (for example **GitHub Pages**). **`cors_a
 | [docs/rag-ingestion.md](docs/rag-ingestion.md) | **How to publish new RAG source files and ingest them into Vertex RAG in production** |
 | [terraform/README.md](terraform/README.md) | First-time GCP setup, Terraform apply, GitHub Actions secrets, custom domain, remote state |
 | [docs/session-digest.md](docs/session-digest.md) | Optional email transcript job (Workspace, Gmail API, Terraform variables) |
+| [specs/001-conversation-persistence-admin/quickstart.md](specs/001-conversation-persistence-admin/quickstart.md) | Durable chat, admin OAuth, owner replies, escalation email (local + production validation) |
 | [docs/troubleshooting-gcp-auth.md](docs/troubleshooting-gcp-auth.md) | `invalid_grant` / ADC / Terraform provider auth |
 | [docs/observability.md](docs/observability.md) | Error monitoring + alerting (Cloud Logging, Error Reporting, Monitoring) |
 
@@ -36,6 +37,12 @@ Use **[uv](https://docs.astral.sh/uv/)** for environments and commands (`uv sync
 ```bash
 uv sync --extra dev
 uv run pytest -q
+```
+
+With PostgreSQL (`DATABASE_URL` set), apply schema via Alembic:
+
+```bash
+uv run alembic upgrade head
 ```
 
 Run the API locally with variables from [`.env.example`](.env.example). Terraform does **not** read `.env`; use `TF_VAR_project_id` or `terraform/terraform.tfvars` for infrastructure (see [terraform/README.md](terraform/README.md)).

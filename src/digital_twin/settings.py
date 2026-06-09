@@ -38,6 +38,20 @@ class Settings:
 
     crash_data_bq_dataset: str
 
+    database_url: str
+
+    admin_allowed_emails: tuple[str, ...]
+    admin_session_secret: str
+    admin_session_max_age_seconds: int
+
+    google_oauth_client_id: str
+    google_oauth_client_secret: str
+    admin_oauth_redirect_uri: str
+    admin_ui_redirect_url: str
+
+    escalation_email_to: str
+    escalation_email_debounce_minutes: int
+
 
 def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default).strip()
@@ -96,6 +110,20 @@ def get_settings() -> Settings:
         gmail_service_account_json=_env("GMAIL_SERVICE_ACCOUNT_JSON", ""),
         gmail_service_account_key_file=_env("GMAIL_SERVICE_ACCOUNT_KEY_FILE", ""),
         crash_data_bq_dataset=_env("CRASH_DATA_BQ_DATASET", ""),
+        database_url=_env("DATABASE_URL", ""),
+        admin_allowed_emails=tuple(
+            e.strip().lower()
+            for e in _env("ADMIN_ALLOWED_EMAILS", "").split(",")
+            if e.strip()
+        ),
+        admin_session_secret=_env("ADMIN_SESSION_SECRET", ""),
+        admin_session_max_age_seconds=max(60, _env_int("ADMIN_SESSION_MAX_AGE_SECONDS", 7200)),
+        google_oauth_client_id=_env("GOOGLE_OAUTH_CLIENT_ID", ""),
+        google_oauth_client_secret=_env("GOOGLE_OAUTH_CLIENT_SECRET", ""),
+        admin_oauth_redirect_uri=_env("ADMIN_OAUTH_REDIRECT_URI", ""),
+        admin_ui_redirect_url=_env("ADMIN_UI_REDIRECT_URL", ""),
+        escalation_email_to=_env("ESCALATION_EMAIL_TO", "") or _env("RESUME_BOT_DIGEST_EMAIL_TO", ""),
+        escalation_email_debounce_minutes=max(1, _env_int("ESCALATION_EMAIL_DEBOUNCE_MINUTES", 60)),
     )
 
 

@@ -237,3 +237,31 @@ Optional: **`session_digest_schedule`** (cron, default `*/15 * * * *`), **`sessi
 After apply, run **`./scripts/print-github-actions-secrets.sh`** and set GitHub repository **Variable** **`SESSION_DIGEST_JOB_NAME`** to **`terraform output -raw session_digest_job_name`** so **`.github/workflows/deploy-api.yml`** updates the job image on every deploy.
 
 See **[`docs/session-digest.md`](../docs/session-digest.md)** for Workspace / domain-wide delegation and broader context.
+
+### Cloud SQL conversation database (feature 001)
+
+**`terraform/cloud_sql.tf`** provisions optional PostgreSQL for durable chat + admin when **`enable_conversation_db = true`** in **`terraform.tfvars`**.
+
+Required variables (see **`variables.tf`**):
+
+- **`conversation_db_password_secret_id`** — Secret Manager secret with DB user password
+- **`conversation_database_url_secret_id`** — full **`DATABASE_URL`** for Cloud Run (unix socket form), e.g. `postgresql+psycopg://USER:PASS@/digital_twin?host=/cloudsql/PROJECT:REGION:INSTANCE`
+- **`admin_session_secret_id`**, **`google_oauth_client_id`**, **`google_oauth_client_secret_id`**
+- **`admin_allowed_emails`** — comma-separated allowlist
+- Optional: **`admin_oauth_redirect_uri`**, **`admin_ui_redirect_url`**, **`escalation_email_to`**
+
+**Apply order:** `terraform apply` creates the instance, IAM, and wires Cloud Run (`cloud_run.tf`) with the Cloud SQL volume mount and secrets. **`deploy-api.yml` updates only the container image** (and existing app env); **`DATABASE_URL` and OAuth env are Terraform-managed**, same pattern as **`RAG_CORPUS_RESOURCE`**.
+
+**Schema migrations** (Alembic):
+
+- **Production**: **Deploy API** GitHub Action runs `uv run python -m digital_twin.migrate` before updating Cloud Run when repository Variables **`CLOUD_SQL_CONNECTION_NAME`** and **`CONVERSATION_DATABASE_URL_SECRET_ID`** are set (from `terraform output cloud_sql_connection_name` and `conversation_database_url_secret_id`).
+- **Local / operator**:
+
+```bash
+export DATABASE_URL="postgresql+psycopg://..."
+uv run alembic upgrade head
+```
+
+New schema changes: `uv run alembic revision --autogenerate -m "describe change"` then commit under `alembic/versions/`.
+
+**Local dev:** run Postgres locally or use [Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy), export **`DATABASE_URL`**, apply SQL scripts, then start uvicorn. See **`specs/001-conversation-persistence-admin/quickstart.md`**.

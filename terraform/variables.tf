@@ -211,3 +211,88 @@ variable "crash_data_bq_dataset" {
   type        = string
   default     = "vehicle_crashes"
 }
+
+variable "enable_conversation_db" {
+  description = "Provision Cloud SQL PostgreSQL + conversation/admin env on Cloud Run."
+  type        = bool
+  default     = false
+}
+
+variable "conversation_db_tier" {
+  description = "Cloud SQL machine tier for conversation database."
+  type        = string
+  default     = "db-f1-micro"
+}
+
+variable "conversation_db_name" {
+  description = "PostgreSQL database name for conversations."
+  type        = string
+  default     = "digital_twin"
+}
+
+variable "conversation_db_user" {
+  description = "PostgreSQL user for the API."
+  type        = string
+  default     = "digital_twin_api"
+}
+
+variable "conversation_db_password_secret_id" {
+  description = "Secret Manager secret id (short name) holding the DB user password."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "conversation_database_url_secret_id" {
+  description = <<-EOT
+    Secret Manager secret id holding full DATABASE_URL for Cloud Run (unix socket form).
+    Example: postgresql+psycopg://USER:PASS@/digital_twin?host=/cloudsql/PROJECT:REGION:INSTANCE
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "admin_allowed_emails" {
+  description = "Comma-separated Google accounts allowed for admin OAuth."
+  type        = list(string)
+  default     = []
+}
+
+variable "admin_session_secret_id" {
+  description = "Secret Manager secret id for ADMIN_SESSION_SECRET (itsdangerous cookie signing)."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_oauth_client_id" {
+  description = "Google OAuth client id for admin sign-in."
+  type        = string
+  default     = ""
+}
+
+variable "google_oauth_client_secret_id" {
+  description = "Secret Manager secret id for GOOGLE_OAUTH_CLIENT_SECRET."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "admin_oauth_redirect_uri" {
+  description = "OAuth redirect URI registered in Google Cloud Console (ADMIN_OAUTH_REDIRECT_URI)."
+  type        = string
+  default     = ""
+}
+
+variable "admin_ui_redirect_url" {
+  description = "Post-login redirect for admin UI (ADMIN_UI_REDIRECT_URL)."
+  type        = string
+  default     = ""
+}
+
+variable "escalation_email_to" {
+  description = "Comma-separated escalation alert recipients (ESCALATION_EMAIL_TO)."
+  type        = string
+  default     = ""
+}

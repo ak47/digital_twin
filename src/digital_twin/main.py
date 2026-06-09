@@ -10,6 +10,7 @@ Env (injected by Terraform / Cloud Run):
   RAG_TOP_K               — optional retrieval count (default 8)
   RAG_VECTOR_DISTANCE_THRESHOLD — optional; if set, passed to RAG filter
   GCS_SESSIONS_BUCKET     — session JSON blobs (optional; in-memory if unset)
+  DATABASE_URL            — PostgreSQL for conversation persistence (optional; GCS/memory fallback)
   GCP_PROJECT_ID, GCP_REGION — Vertex Gemini
   GEMINI_MODEL            — optional, default gemini-2.5-flash (Vertex)
   GEMINI_TEMPERATURE      — optional, default 0.2 (lower reduces invented detail)
@@ -30,11 +31,11 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from digital_twin import llm, rate_limit, session_store
+from digital_twin import conversation_store, llm, rate_limit, session_store
 from digital_twin.metrics import record_latency_ms, sized_label
 from digital_twin.observability import log_event, report_exception, setup_logging
 from digital_twin.settings import get_settings
@@ -77,15 +78,15 @@ def _cors_origins() -> list[str]:
 # Terraform/CI pass comma-separated origins; gcloud --update-env-vars breaks on commas unless a
 # custom delimiter is used (see deploy workflow).
 
-app = FastAPI(title="digital-twin-api", version="0.2.0")
+app = FastAPI(title="digital-twin-api", version="0.3.0")
 
 _origins = _cors_origins()
 if _origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_origins,
-        allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "OPTIONS"],
         allow_headers=["*"],
         expose_headers=[SESSION_HEADER],
     )
@@ -111,10 +112,22 @@ async def request_context_middleware(request: Request, call_next):
     return response
 
 
+def _use_database() -> bool:
+    return conversation_store.is_database_enabled()
+
+
+from digital_twin import admin_routes
+
+app.include_router(admin_routes.router)
+
+
 @app.get("/health", response_class=JSONResponse)
 def health() -> dict[str, str]:
     """Liveness/readiness; always application/json when this app handles the request."""
-    return {"status": "ok"}
+    body: dict[str, str] = {"status": "ok"}
+    if _use_database():
+        body["database"] = "ok" if conversation_store.health_check() else "degraded"
+    return body
 
 
 @app.head("/health")
@@ -145,6 +158,12 @@ def _json_with_session_id(*, sid: str, body: dict[str, object]) -> JSONResponse:
     return resp
 
 
+def _load_chat_messages(sid: str) -> list[dict[str, object]]:
+    if _use_database():
+        return conversation_store.load_legacy_messages(sid)
+    return session_store.load_messages(sid)
+
+
 @app.get("/api/chat")
 def chat_history(
     request: Request,
@@ -152,9 +171,29 @@ def chat_history(
 ) -> JSONResponse:
     sid = _resolve_session_id_or_400(x_session_id)
     update_session_context(sid)
-    messages = session_store.load_messages(sid)
+    messages = _load_chat_messages(sid)
     body = {"messages": messages}
     return _json_with_session_id(sid=sid, body=body)
+
+
+@app.get("/api/conversations/{conversation_id}")
+def get_conversation_thread(
+    conversation_id: str,
+    after: int | None = Query(default=None),
+) -> dict[str, object]:
+    if not _use_database():
+        raise HTTPException(status_code=503, detail="Conversation API requires DATABASE_URL")
+    try:
+        uuid.UUID(conversation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid conversation_id") from e
+    messages = conversation_store.get_messages(conversation_id, after_id=after)
+    name = messages[0].get("conversation_name") if messages else None
+    return {
+        "conversation_id": conversation_id,
+        "conversation_name": name,
+        "messages": messages,
+    }
 
 
 @app.post("/api/chat")
@@ -172,23 +211,57 @@ async def chat_post(
     sid = _resolve_session_id_or_400(x_session_id)
     update_session_context(sid)
 
+    if _use_database():
+        rate_limit.check_conversation_rate_limit(sid)
+
     try:
         payload = await request.json()
     except json.JSONDecodeError:
         payload = {}
-    prompt = (payload.get("prompt") or "").strip()
+    prompt = conversation_store.clamp_message((payload.get("prompt") or "").strip())
     if not prompt:
         raise HTTPException(status_code=400, detail="Missing or empty prompt.")
+    visitor_name = (payload.get("visitor_name") or "").strip() or None
 
-    history = [dict(m) for m in session_store.load_messages(sid)]
-    history.append({"role": "user", "text": prompt})
+    if _use_database():
+
+        def persist_visitor() -> None:
+            conversation_store.insert_message(
+                sid,
+                "visitor",
+                prompt,
+                visitor_name=visitor_name,
+            )
+
+        try:
+            await asyncio.to_thread(persist_visitor)
+        except Exception as e:
+            log_event(
+                event="conversation_persist_failed",
+                severity=logging.ERROR,
+                message="Visitor message persist failed",
+                logger=logger,
+                where="chat_post.persist_visitor",
+                error_code="conversation_persist_error",
+                exception_message=str(e),
+                session_id=sid,
+                exc_info=True,
+            )
+            report_exception(e, context={"where": "chat_post.persist_visitor"})
+            raise HTTPException(status_code=500, detail="Could not save message") from e
+
+        history = conversation_store.load_legacy_messages(sid)
+    else:
+        history = [dict(m) for m in session_store.load_messages(sid)]
+        history.append({"role": "user", "text": prompt})
 
     async def events() -> AsyncIterator[bytes]:
         pieces: list[str] = []
         total_start = time.perf_counter()
 
         def run_model() -> str:
-            return "".join(llm.stream_reply(history[:-1], prompt))
+            prior = history[:-1] if history else []
+            return "".join(llm.stream_reply(prior, prompt))
 
         model_start = time.perf_counter()
         model_status = "ok"
@@ -233,6 +306,7 @@ async def chat_post(
             except Exception:
                 pass
 
+        text, escalated = conversation_store.strip_escalation_marker(text)
         pieces.append(text)
         chunk_size = 48
         for i in range(0, len(text), chunk_size):
@@ -240,27 +314,64 @@ async def chat_post(
             yield f"data: {json.dumps({'text': frag})}\n\n".encode()
 
         assistant_msg = "".join(pieces)
-        final_history = history + [{"role": "assistant", "text": assistant_msg}]
 
-        def persist() -> None:
-            session_store.save_messages(sid, final_history)
+        if _use_database():
 
-        try:
-            await asyncio.to_thread(persist)
-        except Exception as e:
-            log_event(
-                event="chat_session_persist_failed",
-                severity=logging.ERROR,
-                message="Session save failed",
-                logger=logger,
-                where="chat_post.persist_session",
-                error_code="chat_session_persist_error",
-                exception_message=str(e),
-                session_id=sid,
-                exc_info=True,
-            )
-            report_exception(e, context={"where": "chat_post.persist_session"})
-            yield f"data: {json.dumps({'warning': 'session not saved', 'detail': str(e)})}\n\n".encode()
+            def persist_twin() -> None:
+                conversation_store.insert_message(
+                    sid,
+                    "twin",
+                    assistant_msg,
+                    needs_attention=escalated,
+                )
+                if escalated:
+                    conversation_store.set_needs_attention(sid, flag=True)
+                    from digital_twin import escalation_email
+
+                    escalation_email.send_escalation_email(
+                        sid,
+                        preview=assistant_msg[:500],
+                        visitor_message=prompt[:500],
+                    )
+
+            try:
+                await asyncio.to_thread(persist_twin)
+            except Exception as e:
+                log_event(
+                    event="conversation_persist_failed",
+                    severity=logging.ERROR,
+                    message="Twin message persist failed",
+                    logger=logger,
+                    where="chat_post.persist_twin",
+                    error_code="conversation_persist_error",
+                    exception_message=str(e),
+                    session_id=sid,
+                    exc_info=True,
+                )
+                report_exception(e, context={"where": "chat_post.persist_twin"})
+                yield f"data: {json.dumps({'warning': 'session not saved', 'detail': str(e)})}\n\n".encode()
+        else:
+            final_history = history + [{"role": "assistant", "text": assistant_msg}]
+
+            def persist() -> None:
+                session_store.save_messages(sid, final_history)
+
+            try:
+                await asyncio.to_thread(persist)
+            except Exception as e:
+                log_event(
+                    event="chat_session_persist_failed",
+                    severity=logging.ERROR,
+                    message="Session save failed",
+                    logger=logger,
+                    where="chat_post.persist_session",
+                    error_code="chat_session_persist_error",
+                    exception_message=str(e),
+                    session_id=sid,
+                    exc_info=True,
+                )
+                report_exception(e, context={"where": "chat_post.persist_session"})
+                yield f"data: {json.dumps({'warning': 'session not saved', 'detail': str(e)})}\n\n".encode()
 
         try:
             mode_raw = (os.environ.get("RAG_ENGINE_DEPLOYMENT_MODE") or "").strip().upper()
@@ -292,6 +403,7 @@ async def chat_post(
             status=model_status,
             session_id=sid,
             output_chars=len(assistant_msg),
+            escalated=escalated,
         )
         yield f"data: {json.dumps({'complete': True})}\n\n".encode()
 

@@ -96,3 +96,14 @@ output "crash_data_bq_dataset" {
   description = "BigQuery dataset id for crash tables (matches CRASH_DATA_BQ_DATASET on Cloud Run)."
   value       = var.enable_crash_data ? google_bigquery_dataset.crash_data[0].dataset_id : null
 }
+
+output "cloud_sql_connection_name" {
+  description = "Cloud SQL instance connection name for Auth Proxy / deploy-api Alembic step (GitHub Variable CLOUD_SQL_CONNECTION_NAME)."
+  value       = local.conversation_db_ready ? google_sql_database_instance.conversations[0].connection_name : null
+}
+
+output "conversation_database_url_secret_id" {
+  description = "Secret Manager id for DATABASE_URL (GitHub Variable CONVERSATION_DATABASE_URL_SECRET_ID)."
+  value       = local.conversation_db_ready ? var.conversation_database_url_secret_id : null
+  sensitive   = true
+}

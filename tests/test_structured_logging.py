@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 
@@ -31,7 +32,16 @@ def test_json_formatter_emits_required_fields() -> None:
 def test_chat_model_failure_emits_structured_error_event(monkeypatch, caplog) -> None:
     monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("GCS_SESSIONS_BUCKET", "")
+    from digital_twin.settings import reset_settings_cache
+
+    reset_settings_cache()
+
+    async def _inline_to_thread(func, /, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", _inline_to_thread)
 
     def _boom(*_args, **_kwargs):
         raise RuntimeError("boom")
