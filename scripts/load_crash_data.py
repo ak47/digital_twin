@@ -14,10 +14,13 @@ uploads to the Terraform-managed bucket, and loads BigQuery tables. No local ste
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
+from io import StringIO
 from pathlib import Path
 
 from google.cloud import bigquery, storage
@@ -63,6 +66,7 @@ CA_FALLBACK_URLS: dict[str, str] = {
 _USER_AGENT = "digital-twin-crash-loader/1.0"
 GCS_PREFIX = "crash-sources"
 _DOWNLOAD_CHUNK_BYTES = 8 * 1024 * 1024
+_CA_TABLE_IDS = frozenset({"ca_crashes", "ca_parties", "ca_injuredwitnesspassengers"})
 
 
 def normalize_redirect_url(url: str) -> str:
@@ -163,12 +167,68 @@ def upload_sources(source_dir: Path, bucket_name: str) -> list[str]:
     return uris
 
 
+def split_gcs_uri(gcs_uri: str) -> tuple[str, str]:
+    if not gcs_uri.startswith("gs://"):
+        raise ValueError(f"Expected gs:// URI, got {gcs_uri!r}")
+    bucket_name, blob_name = gcs_uri[5:].split("/", 1)
+    return bucket_name, blob_name
+
+
+def sanitize_column_name(name: str, *, index: int) -> str:
+    """Approximate BigQuery column-name V2 sanitization for CSV headers."""
+    text = name.replace("\t", " ").strip()
+    text = re.sub(r"[^0-9A-Za-z_]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    if not text:
+        text = f"col_{index}"
+    if text[0].isdigit():
+        text = f"col_{text}"
+    return text
+
+
+def unique_column_names(raw_names: list[str]) -> list[str]:
+    seen: dict[str, int] = {}
+    out: list[str] = []
+    for index, raw in enumerate(raw_names):
+        base = sanitize_column_name(raw, index=index)
+        count = seen.get(base, 0) + 1
+        seen[base] = count
+        out.append(base if count == 1 else f"{base}_{count}")
+    return out
+
+
+def parse_csv_header_line(header_line: str) -> list[str]:
+    return next(csv.reader(StringIO(header_line.lstrip("\ufeff"))))
+
+
+def string_schema_from_header_line(header_line: str) -> list[bigquery.SchemaField]:
+    columns = unique_column_names(parse_csv_header_line(header_line))
+    return [bigquery.SchemaField(name, "STRING") for name in columns]
+
+
+def read_csv_header_line_from_gcs(gcs_uri: str, *, storage_client: storage.Client | None = None) -> str:
+    bucket_name, blob_name = split_gcs_uri(gcs_uri)
+    client = storage_client or storage.Client()
+    blob = client.bucket(bucket_name).blob(blob_name)
+    chunk = blob.download_as_bytes(start=0, end=262144)
+    return chunk.split(b"\n", 1)[0].decode("utf-8", errors="replace")
+
+
+def read_csv_header_line_from_path(path: Path) -> str:
+    with path.open("rb") as handle:
+        chunk = handle.read(262144)
+    return chunk.split(b"\n", 1)[0].decode("utf-8-sig", errors="replace")
+
+
 def load_table(
     client: bigquery.Client,
     project_id: str,
     dataset_id: str,
     table_id: str,
     gcs_uri: str,
+    *,
+    local_csv: Path | None = None,
+    storage_client: storage.Client | None = None,
 ) -> None:
     table_ref = f"{project_id}.{dataset_id}.{table_id}"
     job_config = bigquery.LoadJobConfig(
@@ -179,9 +239,20 @@ def load_table(
         allow_quoted_newlines=True,
         allow_jagged_rows=True,
         ignore_unknown_values=True,
-        # California CCRS CSVs prefix many headers with tab characters (e.g. "\tReport Number").
         column_name_character_map="V2",
     )
+    if table_id in _CA_TABLE_IDS:
+        # CCRS exports use tab-padded headers and human-readable datetimes like
+        # "1/10/2025 8:28:00 AM" that autodetect rejects. Load all columns as STRING.
+        if local_csv is not None and local_csv.is_file():
+            header_line = read_csv_header_line_from_path(local_csv)
+        else:
+            header_line = read_csv_header_line_from_gcs(
+                gcs_uri, storage_client=storage_client
+            )
+        job_config.autodetect = False
+        job_config.schema = string_schema_from_header_line(header_line)
+        print(f"  using STRING schema ({len(job_config.schema)} columns)")
     print(f"Loading {gcs_uri} -> {table_ref}")
     job = client.load_table_from_uri(gcs_uri, table_ref, job_config=job_config)
     job.result()
@@ -226,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--source-dir, --download, or --skip-upload is required")
 
     bq = bigquery.Client(project=args.project_id)
+    gcs_client = storage.Client()
 
     for filename, table_id in FILE_TABLE_MAP.items():
         gcs_uri = f"gs://{args.bucket}/{GCS_PREFIX}/{filename}"
@@ -243,7 +315,20 @@ def main(argv: list[str] | None = None) -> int:
 
     for filename, table_id in FILE_TABLE_MAP.items():
         gcs_uri = f"gs://{args.bucket}/{GCS_PREFIX}/{filename}"
-        load_table(bq, args.project_id, args.dataset, table_id, gcs_uri)
+        local_csv = None
+        if args.source_dir is not None:
+            candidate = args.source_dir / filename
+            if candidate.is_file():
+                local_csv = candidate
+        load_table(
+            bq,
+            args.project_id,
+            args.dataset,
+            table_id,
+            gcs_uri,
+            local_csv=local_csv,
+            storage_client=gcs_client,
+        )
 
     print("Done.")
     return 0

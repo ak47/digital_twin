@@ -66,7 +66,25 @@ def test_normalize_redirect_url_strips_s3_port() -> None:
     )
 
 
-def test_load_table_uses_column_name_character_map_v2(monkeypatch) -> None:
+def test_sanitize_column_name_strips_tabs() -> None:
+    mod = _load_script()
+    assert mod.sanitize_column_name("\tReport Number", index=1) == "Report_Number"
+
+
+def test_string_schema_from_header_line_all_string() -> None:
+    mod = _load_script()
+    schema = mod.string_schema_from_header_line(
+        "Collision Id,\tReport Number,Crash Date Time\n"
+    )
+    assert [field.name for field in schema] == [
+        "Collision_Id",
+        "Report_Number",
+        "Crash_Date_Time",
+    ]
+    assert all(field.field_type == "STRING" for field in schema)
+
+
+def test_load_ca_table_uses_string_schema(monkeypatch) -> None:
     mod = _load_script()
     captured: dict[str, object] = {}
 
@@ -85,5 +103,24 @@ def test_load_table_uses_column_name_character_map_v2(monkeypatch) -> None:
 
             return T()
 
-    mod.load_table(FakeClient(), "proj", "vehicle_crashes", "ca_crashes", "gs://b/f.csv")
-    assert captured["job_config"].column_name_character_map == "V2"
+    local = Path("/tmp/test-ca-header.csv")
+    local.write_text(
+        "Collision Id,\tReport Number,Crash Date Time\n1,2,1/10/2025 8:28:00 AM\n",
+        encoding="utf-8",
+    )
+    try:
+        mod.load_table(
+            FakeClient(),
+            "proj",
+            "vehicle_crashes",
+            "ca_crashes",
+            "gs://b/f.csv",
+            local_csv=local,
+        )
+    finally:
+        local.unlink(missing_ok=True)
+
+    job_config = captured["job_config"]
+    assert job_config.autodetect is False
+    assert job_config.column_name_character_map == "V2"
+    assert [field.field_type for field in job_config.schema] == ["STRING"] * 3
