@@ -13,6 +13,11 @@
 name: Load crash data
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/load_crash_data.py"
+      - ".github/workflows/load-crash-data.yml"
   schedule:
     # 1st of each month, 07:00 UTC — refresh from NYC Open Data + data.ca.gov
     - cron: "0 7 1 * *"
