@@ -144,6 +144,8 @@ variable "github_actions_terraform_roles" {
   description = <<-EOT
     Extra project IAM roles for the GitHub deploy SA so .github/workflows/terraform.yml can run terraform apply.
     Typical for a dedicated GCP project: ["roles/editor", "roles/resourcemanager.projectIamAdmin"].
+    Secret IAM on Terraform-managed secrets also requires roles/secretmanager.admin — granted automatically
+    when this list is non-empty (see github_actions.tf).
     Leave empty (default) if you only run terraform from your laptop — ingest still works with gha_terraform_state_bucket + viewer.
     Bootstrap: add these roles and apply once locally before the first successful GHA apply.
   EOT

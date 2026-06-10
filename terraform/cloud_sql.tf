@@ -67,8 +67,9 @@ resource "google_sql_database_instance" "conversations" {
     tier = var.conversation_db_tier
 
     ip_configuration {
-      ipv4_enabled    = false
-      private_network = null
+      # Cloud Run connects via the built-in Cloud SQL connector (/cloudsql/…). Public IP is
+      # required by the API; without authorized_networks the instance is not open to the internet.
+      ipv4_enabled = true
     }
 
     backup_configuration {
@@ -178,6 +179,12 @@ resource "google_secret_manager_secret_iam_member" "conversation_db_password_acc
   secret_id = local.conversation_db_password_secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.cloud_run_api.email}"
+
+  depends_on = [
+    google_secret_manager_secret_version.conversation_db_password,
+    google_secret_manager_secret.conversation_db_password,
+    google_project_iam_member.github_deploy_secret_manager_admin,
+  ]
 }
 
 resource "google_secret_manager_secret_iam_member" "conversation_database_url_accessor" {
@@ -187,6 +194,12 @@ resource "google_secret_manager_secret_iam_member" "conversation_database_url_ac
   secret_id = local.conversation_database_url_secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.cloud_run_api.email}"
+
+  depends_on = [
+    google_secret_manager_secret_version.conversation_database_url,
+    google_secret_manager_secret.conversation_database_url,
+    google_project_iam_member.github_deploy_secret_manager_admin,
+  ]
 }
 
 resource "google_secret_manager_secret_iam_member" "admin_session_secret_accessor" {
@@ -230,4 +243,10 @@ resource "google_secret_manager_secret_iam_member" "github_deploy_database_url_a
   secret_id = local.conversation_database_url_secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.github_deploy[0].email}"
+
+  depends_on = [
+    google_secret_manager_secret_version.conversation_database_url,
+    google_secret_manager_secret.conversation_database_url,
+    google_project_iam_member.github_deploy_secret_manager_admin,
+  ]
 }
