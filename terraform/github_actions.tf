@@ -70,6 +70,16 @@ resource "google_project_iam_member" "github_deploy_terraform_roles" {
   member  = "serviceAccount:${google_service_account.github_deploy[0].email}"
 }
 
+# Editor can create secrets but not setIamPolicy on them. Grant admin when GHA runs apply so
+# Terraform-managed secrets (conversation DB, etc.) can receive per-secret accessor bindings.
+resource "google_project_iam_member" "github_deploy_secret_manager_admin" {
+  count = local.github_wif_enabled && length(var.github_actions_terraform_roles) > 0 ? 1 : 0
+
+  project = var.project_id
+  role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${google_service_account.github_deploy[0].email}"
+}
+
 # Allow gcloud run services update to keep using the runtime service account on the revision.
 resource "google_service_account_iam_member" "github_deploy_act_as_runtime" {
   count = local.github_wif_enabled ? 1 : 0
