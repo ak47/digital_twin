@@ -15,6 +15,8 @@ from digital_twin.settings import get_settings
 logger = logging.getLogger(__name__)
 
 COOKIE_NAME = "dt_admin"
+OAUTH_PENDING_COOKIE = "dt_admin_oauth"
+OAUTH_PENDING_MAX_AGE_SECONDS = 600
 SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email"]
 
 
@@ -28,6 +30,13 @@ def _serializer() -> URLSafeTimedSerializer:
     if not secret:
         raise RuntimeError("ADMIN_SESSION_SECRET is not configured")
     return URLSafeTimedSerializer(secret, salt="digital-twin-admin")
+
+
+def _oauth_pending_serializer() -> URLSafeTimedSerializer:
+    secret = get_settings().admin_session_secret
+    if not secret:
+        raise RuntimeError("ADMIN_SESSION_SECRET is not configured")
+    return URLSafeTimedSerializer(secret, salt="digital-twin-admin-oauth-pending")
 
 
 def session_max_age() -> int:
@@ -58,12 +67,18 @@ def oauth_callback_authorization_response(request: Request) -> str:
     return redirect_uri
 
 
-def oauth_flow() -> Flow:
+def oauth_flow(*, code_verifier: str | None = None, state: str | None = None) -> Flow:
     s = get_settings()
     if not s.google_oauth_client_id or not s.google_oauth_client_secret:
         raise RuntimeError("Google OAuth client credentials are not configured")
     if not s.admin_oauth_redirect_uri:
         raise RuntimeError("ADMIN_OAUTH_REDIRECT_URI is not configured")
+    flow_kwargs: dict[str, object] = {"redirect_uri": s.admin_oauth_redirect_uri}
+    if code_verifier is not None:
+        flow_kwargs["code_verifier"] = code_verifier
+        flow_kwargs["autogenerate_code_verifier"] = False
+    if state is not None:
+        flow_kwargs["state"] = state
     return Flow.from_client_config(
         {
             "web": {
@@ -74,8 +89,42 @@ def oauth_flow() -> Flow:
             }
         },
         scopes=SCOPES,
-        redirect_uri=s.admin_oauth_redirect_uri,
+        **flow_kwargs,
     )
+
+
+def set_oauth_pending_cookie(response: Response, *, state: str, code_verifier: str) -> None:
+    token = _oauth_pending_serializer().dumps(
+        {"state": state, "code_verifier": code_verifier},
+    )
+    response.set_cookie(
+        OAUTH_PENDING_COOKIE,
+        token,
+        max_age=OAUTH_PENDING_MAX_AGE_SECONDS,
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(),
+    )
+
+
+def load_oauth_pending(state: str, token: str | None) -> str:
+    if not token:
+        raise HTTPException(status_code=400, detail="OAuth session expired; sign in again")
+    try:
+        data = _oauth_pending_serializer().loads(token, max_age=OAUTH_PENDING_MAX_AGE_SECONDS)
+    except (BadSignature, SignatureExpired) as e:
+        raise HTTPException(status_code=400, detail="OAuth session expired; sign in again") from e
+    stored_state = (data.get("state") or "").strip()
+    code_verifier = (data.get("code_verifier") or "").strip()
+    if not stored_state or not code_verifier:
+        raise HTTPException(status_code=400, detail="OAuth session invalid; sign in again")
+    if not constant_time_compare(stored_state, state.strip()):
+        raise HTTPException(status_code=400, detail="OAuth state mismatch; sign in again")
+    return code_verifier
+
+
+def clear_oauth_pending_cookie(response: Response) -> None:
+    response.delete_cookie(OAUTH_PENDING_COOKIE)
 
 
 def set_session_cookie(response: Response, email: str) -> None:

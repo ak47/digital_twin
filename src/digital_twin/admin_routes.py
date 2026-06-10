@@ -31,18 +31,31 @@ def auth_google() -> RedirectResponse:
         flow = admin_auth.oauth_flow()
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-    auth_url, _ = flow.authorization_url(
+    auth_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="select_account",
     )
-    return RedirectResponse(auth_url)
+    if not flow.code_verifier:
+        raise HTTPException(status_code=500, detail="OAuth PKCE verifier missing")
+    response = RedirectResponse(auth_url)
+    admin_auth.set_oauth_pending_cookie(
+        response,
+        state=state,
+        code_verifier=flow.code_verifier,
+    )
+    return response
 
 
 @router.get("/auth/google/callback")
 def auth_google_callback(request: Request) -> RedirectResponse:
+    callback_state = request.query_params.get("state") or ""
+    code_verifier = admin_auth.load_oauth_pending(
+        callback_state,
+        request.cookies.get(admin_auth.OAUTH_PENDING_COOKIE),
+    )
     try:
-        flow = admin_auth.oauth_flow()
+        flow = admin_auth.oauth_flow(code_verifier=code_verifier, state=callback_state)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     flow.fetch_token(
@@ -74,6 +87,7 @@ def auth_google_callback(request: Request) -> RedirectResponse:
         raise HTTPException(status_code=403, detail="Email not authorized for admin access")
     redirect = s.admin_ui_redirect_url or "/"
     response = RedirectResponse(redirect, status_code=302)
+    admin_auth.clear_oauth_pending_cookie(response)
     admin_auth.set_session_cookie(response, email)
     return response
 
