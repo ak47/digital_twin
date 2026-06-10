@@ -194,6 +194,29 @@ jobs:
             --update-env-vars "^;^GCP_PROJECT_ID=${PROJECT_ID};GCP_REGION=${REGION};CORS_ALLOWED_ORIGINS=${CORS}${EXTRA}" \
             --quiet
 
+      - name: Verify API health (database schema when Cloud SQL enabled)
+        if: env.CLOUD_SQL_CONNECTION_NAME != '' && env.CONVERSATION_DATABASE_URL_SECRET_ID != ''
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -eu
+          URL="$(gcloud run services describe "${SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --format='value(status.url)')"
+          echo "Checking ${URL}/health"
+          for attempt in 1 2 3 4 5 6; do
+            body="$(curl -sf "${URL}/health" || true)"
+            if [ -n "${body}" ] && printf '%s' "${body}" | grep -q '"database":"ok"'; then
+              echo "Health OK: ${body}"
+              exit 0
+            fi
+            echo "Attempt ${attempt}: health not ready (${body:-curl failed}); waiting…"
+            sleep 10
+          done
+          echo "::error::/health did not report database=ok — Alembic migrations may have failed or schema is missing"
+          exit 1
+
       # Idle session digest runs in a Cloud Run Job (Terraform digest_job.tf), not the API service.
       - name: Update session digest job image (optional)
         env:
