@@ -147,7 +147,7 @@ resource "google_cloud_run_v2_service" "api" {
           name = "ADMIN_SESSION_SECRET"
           value_source {
             secret_key_ref {
-              secret  = var.admin_session_secret_id
+              secret  = local.admin_session_secret_id
               version = "latest"
             }
           }
@@ -219,6 +219,8 @@ resource "google_cloud_run_v2_service" "api" {
     google_project_iam_member.cloud_run_cloud_sql_client,
     google_secret_manager_secret_iam_member.conversation_db_password_accessor,
     google_secret_manager_secret_iam_member.conversation_database_url_accessor,
+    google_secret_manager_secret_iam_member.admin_session_secret_accessor,
+    google_secret_manager_secret_iam_member.google_oauth_client_secret_accessor,
   ]
 }
 

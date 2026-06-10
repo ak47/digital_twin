@@ -259,7 +259,11 @@ variable "admin_allowed_emails" {
 }
 
 variable "admin_session_secret_id" {
-  description = "Secret Manager secret id for ADMIN_SESSION_SECRET (itsdangerous cookie signing)."
+  description = <<-EOT
+    Secret Manager secret id for ADMIN_SESSION_SECRET (itsdangerous cookie signing).
+    Leave empty or set to "{name_prefix}-admin-session-secret" (default) for Terraform to generate
+    and store a random value. Any other id must already exist in Secret Manager before apply.
+  EOT
   type        = string
   default     = ""
   sensitive   = true
@@ -272,7 +276,7 @@ variable "google_oauth_client_id" {
 }
 
 variable "google_oauth_client_secret_id" {
-  description = "Secret Manager secret id for GOOGLE_OAUTH_CLIENT_SECRET."
+  description = "Secret Manager secret id for GOOGLE_OAUTH_CLIENT_SECRET. Must exist before apply (create manually with the OAuth client secret from Google Cloud Console)."
   type        = string
   default     = ""
   sensitive   = true
