@@ -6,7 +6,7 @@ import logging
 import secrets
 from dataclasses import dataclass
 
-from fastapi import Cookie, HTTPException, Response
+from fastapi import Cookie, HTTPException, Request, Response
 from google_auth_oauthlib.flow import Flow
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
@@ -39,6 +39,23 @@ def is_email_allowlisted(email: str) -> bool:
     if not allowed:
         return False
     return email.strip().lower() in allowed
+
+
+def oauth_callback_authorization_response(request: Request) -> str:
+    """Build the OAuth callback URL for token exchange.
+
+    Cloud Run terminates TLS at the load balancer, so ``request.url`` is often
+    ``http://…`` internally. oauthlib rejects that with InsecureTransportError.
+    Use the configured redirect URI (always https in production) plus the query
+    string Google appended on redirect.
+    """
+    redirect_uri = get_settings().admin_oauth_redirect_uri
+    if not redirect_uri:
+        raise RuntimeError("ADMIN_OAUTH_REDIRECT_URI is not configured")
+    query = request.url.query
+    if query:
+        return f"{redirect_uri}?{query}"
+    return redirect_uri
 
 
 def oauth_flow() -> Flow:
