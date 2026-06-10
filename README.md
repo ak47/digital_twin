@@ -50,7 +50,7 @@ Run the API locally with variables from [`.env.example`](.env.example). Terrafor
 ## Deploy API to Cloud Run
 
 1. Apply Terraform in `terraform/` (creates buckets, RAG engine config, Artifact Registry, Cloud Run service, and optionally **WIF for GitHub** when **`github_repository`** is set in **`terraform.tfvars`**).
-2. Add the GitHub Actions **secrets** from `./scripts/print-github-actions-secrets.sh` once WIF outputs exist (**GCP** trio + **`TERRAFORM_TFVARS`** if you use [`.github/workflows/terraform.yml`](.github/workflows/terraform.yml)). If you left **`github_repository`** empty, use another deploy auth path (for example JSON keys) instead of those outputs.
+2. Add the GitHub Actions **secrets** from `./scripts/print-github-actions-secrets.sh` once WIF outputs exist (**GCP** trio). Set **Variables** per [`docs/github-actions-terraform-config.md`](docs/github-actions-terraform-config.md) (or run `./scripts/gha-migrate-tfvars-to-variables.sh`) if you use [`.github/workflows/terraform.yml`](.github/workflows/terraform.yml). If you left **`github_repository`** empty, use another deploy auth path (for example JSON keys) instead of those outputs.
 3. Set repository **Variable** **`CORS_ALLOWED_ORIGINS`** (comma-separated, same origins as Terraform **`cors_allowed_origins`**). **Deploy API** fails fast if it is missing so the workflow cannot drift to generic defaults.
 4. Push to `main` (or run **Deploy API** manually); [.github/workflows/deploy-api.yml](.github/workflows/deploy-api.yml) builds `linux/amd64`, pushes the image, and updates the service.
 

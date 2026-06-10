@@ -70,12 +70,14 @@ jobs:
           GCP_WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_SA_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
         run: |
           set +x
           missing=""
           [ -z "${GCP_WIF_PROVIDER}" ] && missing="${missing} GCP_WORKLOAD_IDENTITY_PROVIDER"
           [ -z "${GCP_SA_EMAIL}" ] && missing="${missing} GCP_SERVICE_ACCOUNT_EMAIL"
           [ -z "${GCP_PROJECT_ID}" ] && missing="${missing} GCP_PROJECT_ID"
+          [ -z "${TF_STATE_BUCKET}" ] && missing="${missing} TF_STATE_BUCKET (repo variable)"
           if [ -n "${missing}" ]; then
             echo "::error::Missing or empty repository secrets:${missing}"
             echo ""
@@ -92,6 +94,11 @@ jobs:
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
@@ -110,22 +117,38 @@ jobs:
           docker push "${IMAGE}"
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
 
-      # Optional: Alembic migrations before new revision serves traffic.
-      # Set repository Variables CLOUD_SQL_CONNECTION_NAME and CONVERSATION_DATABASE_URL_SECRET_ID
-      # (terraform outputs). Skipped when either is unset (conversation DB not enabled).
-      - name: Run database migrations (Alembic)
+      # Conversation DB connection info comes from remote Terraform state (same pattern as ingest-rag-corpus).
+      # Requires TF_STATE_BUCKET repo Variable + TF_ENABLE_CONVERSATION_DB=true,
+      # applied via the Terraform workflow (push terraform/** to main or workflow_dispatch apply).
+      - name: Resolve conversation DB from Terraform state
         env:
-          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          CLOUD_SQL_CONNECTION_NAME: ${{ vars.CLOUD_SQL_CONNECTION_NAME }}
-          CONVERSATION_DATABASE_URL_SECRET_ID: ${{ vars.CONVERSATION_DATABASE_URL_SECRET_ID }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
         run: |
           set -eu
-          INSTANCE="$(printf '%s' "${CLOUD_SQL_CONNECTION_NAME:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-          SECRET_ID="$(printf '%s' "${CONVERSATION_DATABASE_URL_SECRET_ID:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-          if [ -z "${INSTANCE}" ] || [ -z "${SECRET_ID}" ]; then
-            echo "CLOUD_SQL_CONNECTION_NAME or CONVERSATION_DATABASE_URL_SECRET_ID unset; skip Alembic migrations"
+          if [ -z "${TF_STATE_BUCKET:-}" ]; then
+            echo "TF_STATE_BUCKET unset; Alembic migrations will be skipped"
             exit 0
           fi
+          terraform -chdir=terraform init -input=false -no-color -backend-config="bucket=${TF_STATE_BUCKET}"
+          conn="$(terraform -chdir=terraform output -raw cloud_sql_connection_name 2>/dev/null || true)"
+          secret="$(terraform -chdir=terraform output -raw conversation_database_url_secret_id 2>/dev/null || true)"
+          if [ -z "${conn}" ] || [ "${conn}" = "null" ] || [ -z "${secret}" ] || [ "${secret}" = "null" ]; then
+            echo "Conversation DB not provisioned in Terraform state (TF_ENABLE_CONVERSATION_DB=true + Terraform apply); skip migrations"
+            exit 0
+          fi
+          echo "CLOUD_SQL_CONNECTION_NAME=${conn}" >> "${GITHUB_ENV}"
+          echo "CONVERSATION_DATABASE_URL_SECRET_ID=${secret}" >> "${GITHUB_ENV}"
+          echo "Using Cloud SQL instance: ${conn}"
+          echo "DATABASE_URL secret id: ${secret}"
+
+      - name: Run database migrations (Alembic)
+        if: env.CLOUD_SQL_CONNECTION_NAME != '' && env.CONVERSATION_DATABASE_URL_SECRET_ID != ''
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          CLOUD_SQL_CONNECTION_NAME: ${{ env.CLOUD_SQL_CONNECTION_NAME }}
+          CONVERSATION_DATABASE_URL_SECRET_ID: ${{ env.CONVERSATION_DATABASE_URL_SECRET_ID }}
+        run: |
+          set -eu
           curl -fsSL -o cloud-sql-proxy \
             https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.3/cloud-sql-proxy.linux.amd64
           chmod +x cloud-sql-proxy

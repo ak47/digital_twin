@@ -34,7 +34,7 @@
    ./scripts/print-github-actions-secrets.sh
    ```
 
-   Paste into **Settings → Secrets and variables → Actions** (see script output for **`TERRAFORM_TFVARS`** too).
+   Paste into **Settings → Secrets and variables → Actions** (see script output and [`docs/github-actions-terraform-config.md`](../docs/github-actions-terraform-config.md)).
 
 5. **CI** — `deploy-api.yml` builds and deploys the container; `ingest-rag-corpus.yml` re-imports from GCS; `terraform.yml` can **plan** (every PR / push to `main` touching `terraform/**`) and **apply** (manual dispatch only). See **[GitHub Actions Terraform](#github-actions-terraform)** below.
 
@@ -54,19 +54,18 @@ terraform import 'google_cloud_run_domain_mapping.api[0]' \
 
 ### GitHub Actions Terraform
 
-Run infrastructure from GitHub so you do not need a laptop with `gcloud`/`terraform` for routine changes.
+Run infrastructure from GitHub — **no monolithic `TERRAFORM_TFVARS` secret**. Each setting is its own repository **Variable** or **Secret** (auditable, visible names).
 
-1. **Repository secret `TERRAFORM_TFVARS`** — paste the **full contents** of your gitignored **`terraform/terraform.tfvars`** (same values you use locally). Create or refresh it with:
-   ```bash
-   gh secret set TERRAFORM_TFVARS < terraform/terraform.tfvars
-   ```
-   (Or paste in the GitHub UI.) This file is sensitive; never commit it.
+**Full reference:** [`docs/github-actions-terraform-config.md`](../docs/github-actions-terraform-config.md)
 
-2. **IAM** — in **`terraform.tfvars`** set **`gha_terraform_state_bucket`** to the **same** bucket as repository variable **`TF_STATE_BUCKET`**, and (for apply from Actions) **`github_actions_terraform_roles`** as above. After the **first** successful apply with those variables (from your laptop or **Actions → Terraform → Run workflow → apply**), the GitHub deploy service account has **read/write** on remote state and project roles. These roles are broad by design; use a **dedicated GCP project** for this stack.
+**Required Variables:** `CORS_ALLOWED_ORIGINS`, `TF_STATE_BUCKET`, `TF_GITHUB_REPOSITORY`  
+**Required Secrets:** `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT_EMAIL` (same as Deploy API)
 
-3. **Workflow** — [`.github/workflows/terraform.yml`](../.github/workflows/terraform.yml): on PR / `main` push it runs **`fmt -check`**, **`validate`**, **`plan`**. To **apply**, open **Actions → Terraform → Run workflow**, check **apply**, and run. **Concurrency** is one run per repo so applies do not overlap.
+**Workflow:** [`.github/workflows/terraform.yml`](../.github/workflows/terraform.yml) runs `scripts/gha-export-terraform-vars.sh` (prints a **config summary** in the log), then `plan` / `apply`. On PR / push to `terraform/**` it plans; **apply** on push to `main` or manual dispatch with **apply** checked.
 
-4. **Fork PRs** — the Terraform job is skipped for pull requests from forks (no repository secrets).
+**IAM:** set `TF_GITHUB_ACTIONS_TERRAFORM_ROLES` and `TF_STATE_BUCKET` (same as `gha_terraform_state_bucket`) before the first GHA apply.
+
+Local `terraform/terraform.tfvars` remains for optional laptop use only; CI ignores it.
 
 ### Custom domain on the API (Terraform)
 
@@ -138,7 +137,7 @@ GCS **cannot** rename a bucket. To move state from **`digital-twien-terraform-st
 
 1. **Create** the new bucket (versioning + uniform access) in the same GCP project — same **`gcloud storage buckets create`** / **`update --versioning`** steps as in [GCS remote state](#gcs-remote-state-dedicated-bucket), with the **new** name. If **`digital-twin-terraform-state`** is already taken globally, pick another unique name and use it for both **`TF_STATE_BUCKET`** and **`gha_terraform_state_bucket`**.
 2. **Grant** identities that will run **`terraform init -migrate-state`** **`roles/storage.objectAdmin`** on the **new** bucket (your user or bootstrap SA). The GitHub deploy SA already has **`objectAdmin`** on the **old** bucket from Terraform; add the same on the **new** bucket (temporary **`gcloud storage buckets add-iam-policy-binding`** is fine) so CI can use the new backend after you switch.
-3. Update **`TF_STATE_BUCKET`** (local env + GitHub repository Variable) and **`gha_terraform_state_bucket`** in **`terraform.tfvars`** to the new name; refresh repository secret **`TERRAFORM_TFVARS`**.
+3. Update **`TF_STATE_BUCKET`** (GitHub repository Variable and local env) and **`gha_terraform_state_bucket`** in **`terraform.tfvars`** to the new name; re-run **`./scripts/gha-migrate-tfvars-to-variables.sh`** if you sync tfvars → GitHub Variables.
 4. From a machine with **read** access to the **old** state and **write** access to the **new** bucket: **`cd terraform`**, **`rm -rf .terraform`**, **`terraform init -migrate-state -backend-config="bucket=${TF_STATE_BUCKET}"`**, confirm copying state into the new backend when prompted. Then **`terraform plan`** — expect at most IAM updates for the state-bucket binding until you **apply**.
 5. **Apply** (GitHub Actions **Terraform** workflow with **apply**, or local) so **`google_storage_bucket_iam_member.github_deploy_terraform_state_access`** attaches to the **new** bucket.
 6. When satisfied, empty and delete the **old** bucket.
@@ -240,28 +239,23 @@ See **[`docs/session-digest.md`](../docs/session-digest.md)** for Workspace / do
 
 ### Cloud SQL conversation database (feature 001)
 
-**`terraform/cloud_sql.tf`** provisions optional PostgreSQL for durable chat + admin when **`enable_conversation_db = true`** in **`terraform.tfvars`**.
+**Infrastructure is applied only via the [Terraform](../../.github/workflows/terraform.yml) GitHub Actions workflow** — not local `terraform apply`. Configure **individual repository Variables** (see [`docs/github-actions-terraform-config.md`](../docs/github-actions-terraform-config.md)); set **`TF_ENABLE_CONVERSATION_DB=true`**.
 
-Required variables (see **`variables.tf`**):
+**GHA-only bootstrap:**
 
-- **`conversation_db_password_secret_id`** — Secret Manager secret with DB user password
-- **`conversation_database_url_secret_id`** — full **`DATABASE_URL`** for Cloud Run (unix socket form), e.g. `postgresql+psycopg://USER:PASS@/digital_twin?host=/cloudsql/PROJECT:REGION:INSTANCE`
-- **`admin_session_secret_id`**, **`google_oauth_client_id`**, **`google_oauth_client_secret_id`**
-- **`admin_allowed_emails`** — comma-separated allowlist
-- Optional: **`admin_oauth_redirect_uri`**, **`admin_ui_redirect_url`**, **`escalation_email_to`**
+1. Ensure GCP WIF secrets, **`TF_STATE_BUCKET`**, **`TF_GITHUB_REPOSITORY`**, and other **`TF_*`** Variables are set (see config doc).
+2. Set **`TF_ENABLE_CONVERSATION_DB=true`** (repository Variable).
+3. Run **Actions → Terraform** (auto on push `terraform/**` to `main`, or workflow_dispatch + apply).
+4. Terraform creates Cloud SQL, DB user, password secret, and **`DATABASE_URL`** secret (managed automatically when secret id vars are empty).
+5. **Deploy API** reads **`cloud_sql_connection_name`** and **`conversation_database_url_secret_id`** from **remote Terraform state** and runs Alembic migrations before updating Cloud Run — **no manual GitHub Variables** for the database.
 
-**Apply order:** `terraform apply` creates the instance, IAM, and wires Cloud Run (`cloud_run.tf`) with the Cloud SQL volume mount and secrets. **`deploy-api.yml` updates only the container image** (and existing app env); **`DATABASE_URL` and OAuth env are Terraform-managed**, same pattern as **`RAG_CORPUS_RESOURCE`**.
+**Two workflows:**
 
-**Schema migrations** (Alembic):
+| Workflow | When | What |
+|----------|------|------|
+| **Terraform** | Push `terraform/**` to `main` (or dispatch + apply) | Creates/updates Cloud SQL, secrets, Cloud Run env |
+| **Deploy API** | Push `src/**`, `alembic/**`, etc. to `main` | Tests → reads TF state → Alembic migrate → deploy image |
 
-- **Production**: **Deploy API** GitHub Action runs `uv run python -m digital_twin.migrate` before updating Cloud Run when repository Variables **`CLOUD_SQL_CONNECTION_NAME`** and **`CONVERSATION_DATABASE_URL_SECRET_ID`** are set (from `terraform output cloud_sql_connection_name` and `conversation_database_url_secret_id`).
-- **Local / operator**:
+After the first Terraform apply with conversation DB enabled, check the workflow log **Post-apply outputs** for `cloud_sql_connection_name` (optional sanity check).
 
-```bash
-export DATABASE_URL="postgresql+psycopg://..."
-uv run alembic upgrade head
-```
-
-New schema changes: `uv run alembic revision --autogenerate -m "describe change"` then commit under `alembic/versions/`.
-
-**Local dev:** run Postgres locally or use [Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy), export **`DATABASE_URL`**, apply SQL scripts, then start uvicorn. See **`specs/001-conversation-persistence-admin/quickstart.md`**.
+**Schema migrations** (Alembic): automatic in Deploy API when conversation DB exists in state. Local dev only: `uv run alembic upgrade head` with `DATABASE_URL` set.

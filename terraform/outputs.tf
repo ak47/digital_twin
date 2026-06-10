@@ -99,11 +99,10 @@ output "crash_data_bq_dataset" {
 
 output "cloud_sql_connection_name" {
   description = "Cloud SQL instance connection name for Auth Proxy / deploy-api Alembic step (GitHub Variable CLOUD_SQL_CONNECTION_NAME)."
-  value       = local.conversation_db_ready ? google_sql_database_instance.conversations[0].connection_name : null
+  value       = local.conversation_db_enabled ? google_sql_database_instance.conversations[0].connection_name : null
 }
 
 output "conversation_database_url_secret_id" {
-  description = "Secret Manager id for DATABASE_URL (GitHub Variable CONVERSATION_DATABASE_URL_SECRET_ID)."
-  value       = local.conversation_db_ready ? var.conversation_database_url_secret_id : null
-  sensitive   = true
+  description = "Secret Manager id for DATABASE_URL (GitHub Variable CONVERSATION_DATABASE_URL_SECRET_ID). Terraform-managed when var is empty."
+  value       = local.conversation_db_enabled ? local.conversation_database_url_secret_id : null
 }

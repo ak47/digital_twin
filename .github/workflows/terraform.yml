@@ -4,12 +4,8 @@
 # On pull_request: plan only (no apply).
 # workflow_dispatch: plan; apply when the "apply" input is checked.
 #
-# Secrets (repository):
-#   GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, GCP_PROJECT_ID — same as Deploy API
-#   TERRAFORM_TFVARS — full multiline body of your gitignored terraform/terraform.tfvars (must match prod)
-#
-# IAM: set github_actions_terraform_roles + gha_terraform_state_bucket in tfvars and TF_STATE_BUCKET repo Variable
-# to the same bucket; apply once so this SA can plan/apply. See terraform/README.md → GitHub Actions Terraform.
+# Configuration: individual repository Variables + Secrets → TF_VAR_* (see docs/github-actions-terraform-config.md).
+# Do NOT use a monolithic TERRAFORM_TFVARS secret.
 #
 # After a successful apply on main, the **Load crash data** workflow runs (workflow_run) to populate BigQuery.
 
@@ -26,11 +22,13 @@ on:
     paths:
       - "terraform/**"
       - ".github/workflows/terraform.yml"
+      - "scripts/gha-export-terraform-vars.sh"
   push:
     branches: [main]
     paths:
       - "terraform/**"
       - ".github/workflows/terraform.yml"
+      - "scripts/gha-export-terraform-vars.sh"
 
 permissions:
   contents: read
@@ -53,23 +51,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Check secrets
+      - name: Check GCP auth secrets
         env:
           GCP_WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_SA_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          TFVARS: ${{ secrets.TERRAFORM_TFVARS }}
-          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
         run: |
           missing=""
           [ -z "${GCP_WIF_PROVIDER}" ] && missing="${missing} GCP_WORKLOAD_IDENTITY_PROVIDER"
           [ -z "${GCP_SA_EMAIL}" ] && missing="${missing} GCP_SERVICE_ACCOUNT_EMAIL"
           [ -z "${GCP_PROJECT_ID}" ] && missing="${missing} GCP_PROJECT_ID"
-          [ -z "${TFVARS}" ] && missing="${missing} TERRAFORM_TFVARS"
-          [ -z "${TF_STATE_BUCKET}" ] && missing="${missing} TF_STATE_BUCKET (repo variable)"
           if [ -n "${missing}" ]; then
-            echo "::error::Missing repository secrets/variables:${missing}"
-            echo "Set TERRAFORM_TFVARS to the full contents of terraform/terraform.tfvars (see terraform/README.md)."
+            echo "::error::Missing repository secrets:${missing}"
             exit 1
           fi
 
@@ -83,10 +76,47 @@ jobs:
           terraform_version: "1.9.8"
           terraform_wrapper: false
 
-      - name: Write terraform.tfvars
+      - name: Export Terraform variables from GitHub config
         env:
-          TFVARS_CONTENT: ${{ secrets.TERRAFORM_TFVARS }}
-        run: printf '%s\n' "${TFVARS_CONTENT}" > terraform/terraform.tfvars
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_GITHUB_REPOSITORY: ${{ vars.TF_GITHUB_REPOSITORY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          TF_REGION: ${{ vars.TF_REGION }}
+          TF_NAME_PREFIX: ${{ vars.TF_NAME_PREFIX }}
+          TF_RAG_CORPUS_RESOURCE_NAME: ${{ vars.TF_RAG_CORPUS_RESOURCE_NAME }}
+          TF_RAG_ENGINE_DEPLOYMENT_MODE: ${{ vars.TF_RAG_ENGINE_DEPLOYMENT_MODE }}
+          TF_RAG_CORPUS_INGEST_REGION: ${{ vars.TF_RAG_CORPUS_INGEST_REGION }}
+          TF_GEMINI_MODEL: ${{ vars.TF_GEMINI_MODEL }}
+          TF_MAX_OUTPUT_TOKENS: ${{ vars.TF_MAX_OUTPUT_TOKENS }}
+          TF_CLOUD_RUN_CUSTOM_DOMAIN: ${{ vars.TF_CLOUD_RUN_CUSTOM_DOMAIN }}
+          TF_ALERT_EMAIL: ${{ vars.TF_ALERT_EMAIL }}
+          TF_SESSION_DIGEST_ENABLED: ${{ vars.TF_SESSION_DIGEST_ENABLED }}
+          TF_SESSION_DIGEST_GMAIL_SECRET_ID: ${{ vars.TF_SESSION_DIGEST_GMAIL_SECRET_ID }}
+          TF_SESSION_DIGEST_DELEGATED_USER: ${{ vars.TF_SESSION_DIGEST_DELEGATED_USER }}
+          TF_SESSION_DIGEST_EMAIL_TO: ${{ vars.TF_SESSION_DIGEST_EMAIL_TO }}
+          TF_SESSION_DIGEST_SCHEDULE: ${{ vars.TF_SESSION_DIGEST_SCHEDULE }}
+          TF_SESSION_DIGEST_SCHEDULER_TIMEZONE: ${{ vars.TF_SESSION_DIGEST_SCHEDULER_TIMEZONE }}
+          TF_SESSION_DIGEST_DISPLAY_TIMEZONE: ${{ vars.TF_SESSION_DIGEST_DISPLAY_TIMEZONE }}
+          TF_GITHUB_ACTIONS_TERRAFORM_ROLES: ${{ vars.TF_GITHUB_ACTIONS_TERRAFORM_ROLES }}
+          TF_ENABLE_CONVERSATION_DB: ${{ vars.TF_ENABLE_CONVERSATION_DB }}
+          TF_ENABLE_CRASH_DATA: ${{ vars.TF_ENABLE_CRASH_DATA }}
+          TF_BUCKET_FORCE_DESTROY: ${{ vars.TF_BUCKET_FORCE_DESTROY }}
+          TF_ADMIN_ALLOWED_EMAILS: ${{ vars.TF_ADMIN_ALLOWED_EMAILS }}
+          TF_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.TF_GOOGLE_OAUTH_CLIENT_ID }}
+          TF_GOOGLE_OAUTH_CLIENT_SECRET_ID: ${{ vars.TF_GOOGLE_OAUTH_CLIENT_SECRET_ID }}
+          TF_ADMIN_SESSION_SECRET_ID: ${{ vars.TF_ADMIN_SESSION_SECRET_ID }}
+          TF_ADMIN_OAUTH_REDIRECT_URI: ${{ vars.TF_ADMIN_OAUTH_REDIRECT_URI }}
+          TF_ADMIN_UI_REDIRECT_URL: ${{ vars.TF_ADMIN_UI_REDIRECT_URL }}
+          TF_ESCALATION_EMAIL_TO: ${{ vars.TF_ESCALATION_EMAIL_TO }}
+          TF_CONVERSATION_DB_TIER: ${{ vars.TF_CONVERSATION_DB_TIER }}
+          TF_CONVERSATION_DB_NAME: ${{ vars.TF_CONVERSATION_DB_NAME }}
+          TF_CONVERSATION_DB_USER: ${{ vars.TF_CONVERSATION_DB_USER }}
+          TF_CONVERSATION_DB_PASSWORD_SECRET_ID: ${{ vars.TF_CONVERSATION_DB_PASSWORD_SECRET_ID }}
+          TF_CONVERSATION_DATABASE_URL_SECRET_ID: ${{ vars.TF_CONVERSATION_DATABASE_URL_SECRET_ID }}
+          TF_CRASH_DATA_BQ_DATASET: ${{ vars.TF_CRASH_DATA_BQ_DATASET }}
+        run: bash scripts/gha-export-terraform-vars.sh
 
       - name: Terraform fmt (check)
         run: terraform -chdir=terraform fmt -check -recursive
@@ -112,3 +142,15 @@ jobs:
           (github.event_name == 'workflow_dispatch' &&
            (github.event.inputs.apply == true || github.event.inputs.apply == 'true'))
         run: terraform -chdir=terraform apply -input=false -no-color -auto-approve tfplan
+
+      - name: Post-apply outputs (reference for logs)
+        if: steps.apply.outcome == 'success'
+        run: |
+          set +eu
+          echo "=== Terraform outputs (also read by Deploy API / Ingest from remote state) ==="
+          for key in cloud_sql_connection_name conversation_database_url_secret_id corpus_bucket_name rag_corpus_resource_name; do
+            val="$(terraform -chdir=terraform output -raw "${key}" 2>/dev/null || true)"
+            if [ -n "${val}" ] && [ "${val}" != "null" ]; then
+              echo "${key}=${val}"
+            fi
+          done
