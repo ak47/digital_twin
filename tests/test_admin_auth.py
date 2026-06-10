@@ -4,7 +4,7 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import Response
+from fastapi import HTTPException, Response
 from itsdangerous import URLSafeTimedSerializer
 
 from digital_twin import admin_auth
@@ -63,3 +63,29 @@ def test_oauth_callback_authorization_response_uses_configured_https_uri(monkeyp
         admin_auth.oauth_callback_authorization_response(request)
         == "https://digital-twin.example/admin/auth/google/callback?state=abc&code=xyz"
     )
+
+
+def test_oauth_pending_cookie_round_trip() -> None:
+    response = Response()
+    admin_auth.set_oauth_pending_cookie(
+        response,
+        state="oauth-state-123",
+        code_verifier="pkce-verifier-456",
+    )
+    cookie_val = response.headers.get("set-cookie", "")
+    assert "dt_admin_oauth=" in cookie_val
+    token = cookie_val.split("dt_admin_oauth=")[1].split(";")[0]
+    assert admin_auth.load_oauth_pending("oauth-state-123", token) == "pkce-verifier-456"
+
+
+def test_oauth_pending_rejects_state_mismatch() -> None:
+    response = Response()
+    admin_auth.set_oauth_pending_cookie(
+        response,
+        state="expected-state",
+        code_verifier="pkce-verifier",
+    )
+    token = response.headers.get("set-cookie", "").split("dt_admin_oauth=")[1].split(";")[0]
+    with pytest.raises(HTTPException) as exc:
+        admin_auth.load_oauth_pending("wrong-state", token)
+    assert exc.value.status_code == 400
