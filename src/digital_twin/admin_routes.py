@@ -45,7 +45,9 @@ def auth_google_callback(request: Request) -> RedirectResponse:
         flow = admin_auth.oauth_flow()
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-    flow.fetch_token(authorization_response=str(request.url))
+    flow.fetch_token(
+        authorization_response=admin_auth.oauth_callback_authorization_response(request)
+    )
     creds = flow.credentials
     if not creds or not creds.id_token:
         raise HTTPException(status_code=401, detail="OAuth token missing")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import Response
@@ -48,3 +49,17 @@ def test_non_allowlisted_email_in_token_rejected() -> None:
     ser = URLSafeTimedSerializer("test-secret-key-for-admin", salt="digital-twin-admin")
     token = ser.dumps({"email": "stranger@example.com"})
     assert admin_auth.load_session(token) is None
+
+
+def test_oauth_callback_authorization_response_uses_configured_https_uri(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "ADMIN_OAUTH_REDIRECT_URI",
+        "https://digital-twin.example/admin/auth/google/callback",
+    )
+    reset_settings_cache()
+    request = MagicMock()
+    request.url.query = "state=abc&code=xyz"
+    assert (
+        admin_auth.oauth_callback_authorization_response(request)
+        == "https://digital-twin.example/admin/auth/google/callback?state=abc&code=xyz"
+    )
