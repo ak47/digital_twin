@@ -105,4 +105,5 @@ output "cloud_sql_connection_name" {
 output "conversation_database_url_secret_id" {
   description = "Secret Manager id for DATABASE_URL (GitHub Variable CONVERSATION_DATABASE_URL_SECRET_ID). Terraform-managed when var is empty."
   value       = local.conversation_db_enabled ? local.conversation_database_url_secret_id : null
+  sensitive   = true
 }
