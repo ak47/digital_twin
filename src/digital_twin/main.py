@@ -34,6 +34,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from digital_twin import conversation_store, llm, rate_limit, session_store
 from digital_twin.metrics import record_latency_ms, sized_label
@@ -119,6 +120,23 @@ def _use_database() -> bool:
 from digital_twin import admin_routes
 
 app.include_router(admin_routes.router)
+
+
+@app.exception_handler(OperationalError)
+@app.exception_handler(ProgrammingError)
+async def database_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Return 503 (with CORS) instead of an unhandled 500 when schema/DB is unavailable."""
+    log_event(
+        event="database_error",
+        severity=logging.ERROR,
+        message="Database query failed",
+        logger=logger,
+        where="database_error_handler",
+        error_code="database_unavailable",
+        exception_message=str(exc),
+        exc_info=True,
+    )
+    return JSONResponse(status_code=503, content={"detail": "Database unavailable"})
 
 
 @app.get("/health", response_class=JSONResponse)

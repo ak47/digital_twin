@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from digital_twin.db import (
     DEFAULT_VISITOR_NAME,
@@ -440,10 +440,13 @@ def health_check() -> bool:
     if not is_database_enabled():
         return False
     try:
-        ok = _db_ping()
-        if not ok:
-            logger.warning("Database health check failed")
-        return ok
+        if not _db_ping():
+            logger.warning("Database health check failed (ping)")
+            return False
+        with get_db_session() as session:
+            # SELECT 1 alone passes before Alembic migrations; verify schema exists.
+            session.execute(text("SELECT id FROM conversations LIMIT 1"))
+        return True
     except Exception as e:
         logger.warning("Database health check failed: %s", e)
         return False
