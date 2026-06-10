@@ -75,7 +75,7 @@ variable "cloud_run_custom_domain" {
 }
 
 variable "alert_email" {
-  description = "Email address for Cloud Monitoring alert notifications (pass via TERRAFORM_TFVARS / TF_VAR_alert_email). Empty disables monitoring resources."
+  description = "Email address for Cloud Monitoring alert notifications (TF_ALERT_EMAIL GitHub Variable). Empty disables monitoring resources."
   type        = string
   default     = ""
 }
@@ -213,7 +213,7 @@ variable "crash_data_bq_dataset" {
 }
 
 variable "enable_conversation_db" {
-  description = "Provision Cloud SQL PostgreSQL + conversation/admin env on Cloud Run."
+  description = "Provision Cloud SQL PostgreSQL. When true, Terraform creates the instance, DB user, password secret, and DATABASE_URL secret (unless secret id vars override)."
   type        = bool
   default     = false
 }
@@ -237,17 +237,14 @@ variable "conversation_db_user" {
 }
 
 variable "conversation_db_password_secret_id" {
-  description = "Secret Manager secret id (short name) holding the DB user password."
+  description = "Optional: existing Secret Manager secret id for DB password. Leave empty (default) for Terraform to generate and store in a managed secret (name_prefix-conversation-db-password)."
   type        = string
   default     = ""
   sensitive   = true
 }
 
 variable "conversation_database_url_secret_id" {
-  description = <<-EOT
-    Secret Manager secret id holding full DATABASE_URL for Cloud Run (unix socket form).
-    Example: postgresql+psycopg://USER:PASS@/digital_twin?host=/cloudsql/PROJECT:REGION:INSTANCE
-  EOT
+  description = "Optional: existing Secret Manager secret id for DATABASE_URL. Leave empty (default) for Terraform to build from the instance connection name and store in a managed secret (name_prefix-conversation-database-url)."
   type        = string
   default     = ""
   sensitive   = true

@@ -17,7 +17,7 @@ resource "google_cloud_run_v2_service" "api" {
     service_account = google_service_account.cloud_run_api.email
 
     dynamic "volumes" {
-      for_each = local.conversation_db_ready ? [1] : []
+      for_each = local.conversation_db_enabled ? [1] : []
       content {
         name = "cloudsql"
         cloud_sql_instance {
@@ -39,7 +39,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "volume_mounts" {
-        for_each = local.conversation_db_ready ? [1] : []
+        for_each = local.conversation_db_enabled ? [1] : []
         content {
           name       = "cloudsql"
           mount_path = "/cloudsql"
@@ -108,12 +108,12 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready ? [1] : []
+        for_each = local.conversation_db_enabled ? [1] : []
         content {
           name = "DATABASE_URL"
           value_source {
             secret_key_ref {
-              secret  = var.conversation_database_url_secret_id
+              secret  = local.conversation_database_url_secret_id
               version = "latest"
             }
           }
@@ -121,7 +121,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready ? [1] : []
+        for_each = local.conversation_db_app_ready ? [1] : []
         content {
           name  = "GOOGLE_OAUTH_CLIENT_ID"
           value = var.google_oauth_client_id
@@ -129,7 +129,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready ? [1] : []
+        for_each = local.conversation_db_app_ready ? [1] : []
         content {
           name = "GOOGLE_OAUTH_CLIENT_SECRET"
           value_source {
@@ -142,7 +142,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready ? [1] : []
+        for_each = local.conversation_db_app_ready ? [1] : []
         content {
           name = "ADMIN_SESSION_SECRET"
           value_source {
@@ -155,7 +155,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready ? [1] : []
+        for_each = local.conversation_db_app_ready ? [1] : []
         content {
           name  = "ADMIN_ALLOWED_EMAILS"
           value = join(",", var.admin_allowed_emails)
@@ -163,7 +163,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready && trimspace(var.admin_oauth_redirect_uri) != "" ? [1] : []
+        for_each = local.conversation_db_app_ready && trimspace(var.admin_oauth_redirect_uri) != "" ? [1] : []
         content {
           name  = "ADMIN_OAUTH_REDIRECT_URI"
           value = var.admin_oauth_redirect_uri
@@ -171,7 +171,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready && trimspace(var.admin_ui_redirect_url) != "" ? [1] : []
+        for_each = local.conversation_db_app_ready && trimspace(var.admin_ui_redirect_url) != "" ? [1] : []
         content {
           name  = "ADMIN_UI_REDIRECT_URL"
           value = var.admin_ui_redirect_url
@@ -179,7 +179,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready && trimspace(var.escalation_email_to) != "" ? [1] : []
+        for_each = local.conversation_db_app_ready && trimspace(var.escalation_email_to) != "" ? [1] : []
         content {
           name  = "ESCALATION_EMAIL_TO"
           value = var.escalation_email_to
@@ -187,7 +187,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready && trimspace(var.session_digest_gmail_secret_id) != "" ? [1] : []
+        for_each = local.conversation_db_app_ready && trimspace(var.session_digest_gmail_secret_id) != "" ? [1] : []
         content {
           name = "GMAIL_SERVICE_ACCOUNT_JSON"
           value_source {
@@ -200,7 +200,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       dynamic "env" {
-        for_each = local.conversation_db_ready && trimspace(var.session_digest_delegated_user) != "" ? [1] : []
+        for_each = local.conversation_db_app_ready && trimspace(var.session_digest_delegated_user) != "" ? [1] : []
         content {
           name  = "GMAIL_DELEGATED_USER"
           value = var.session_digest_delegated_user
@@ -218,8 +218,6 @@ resource "google_cloud_run_v2_service" "api" {
     google_bigquery_dataset_iam_member.crash_data_viewer,
     google_project_iam_member.cloud_run_cloud_sql_client,
     google_secret_manager_secret_iam_member.conversation_db_password_accessor,
-    google_secret_manager_secret_iam_member.admin_session_secret_accessor,
-    google_secret_manager_secret_iam_member.google_oauth_client_secret_accessor,
     google_secret_manager_secret_iam_member.conversation_database_url_accessor,
   ]
 }

@@ -28,15 +28,24 @@ echo ""
 echo "GCP_SERVICE_ACCOUNT_EMAIL"
 terraform output -raw github_actions_deployer_email
 echo ""
-echo "TERRAFORM_TFVARS  (create as secret: full file body for terraform.yml)"
-echo "  gh secret set TERRAFORM_TFVARS < terraform/terraform.tfvars"
 echo ""
-echo "TF_STATE_BUCKET  (create as repository variable)"
+echo "=== GitHub repository Variables (Terraform — see docs/github-actions-terraform-config.md) ==="
+echo ""
+echo "Do NOT use TERRAFORM_TFVARS. Set individual Variables; migrate from tfvars with:"
+echo "  ./scripts/gha-migrate-tfvars-to-variables.sh"
+echo ""
+if [ -f "${REPO_ROOT}/terraform/terraform.tfvars" ]; then
+  bash "${SCRIPT_DIR}/gha-migrate-tfvars-to-variables.sh" 2>/dev/null || true
+else
+  echo "  (no terraform/terraform.tfvars — set TF_* Variables manually in GitHub UI)"
+fi
+echo ""
+echo "TF_STATE_BUCKET  (repository variable — same as gha_terraform_state_bucket)"
 state_bucket="$(awk -F= '/^[[:space:]]*gha_terraform_state_bucket[[:space:]]*=/{v=$2} END{gsub(/["[:space:]]/, "", v); print v}' terraform.tfvars 2>/dev/null || true)"
 if [ -n "${state_bucket}" ]; then
   echo "  gh variable set TF_STATE_BUCKET --body \"${state_bucket}\""
 else
-  echo "  gh variable set TF_STATE_BUCKET --body \"<same value as gha_terraform_state_bucket in terraform.tfvars>\""
+  echo "  gh variable set TF_STATE_BUCKET --body \"<your GCS state bucket>\""
 fi
 echo ""
 echo "=== Ingest RAG corpus workflow (no extra GitHub Variables) ==="
@@ -60,6 +69,24 @@ if [ -n "${digest_job}" ]; then
   echo "${digest_job}"
 else
   echo "Digest job not provisioned (session_digest_enabled=false) or output missing — see README."
+fi
+echo ""
+echo "=== Conversation DB (Deploy API reads these from remote state — no extra GitHub Variables) ==="
+cloud_sql=""
+db_secret=""
+if cs_json="$(terraform output -json cloud_sql_connection_name 2>/dev/null)"; then
+  cloud_sql="$(printf '%s' "${cs_json}" | (cd "${REPO_ROOT}" && uv run python -c "import json,sys; v=json.load(sys.stdin); print('' if v is None else str(v))"))"
+fi
+if ds_json="$(terraform output -json conversation_database_url_secret_id 2>/dev/null)"; then
+  db_secret="$(printf '%s' "${ds_json}" | (cd "${REPO_ROOT}" && uv run python -c "import json,sys; v=json.load(sys.stdin); print('' if v is None else str(v))"))"
+fi
+if [ -n "${cloud_sql}" ]; then
+  echo "cloud_sql_connection_name (Alembic / Cloud SQL Auth Proxy in Deploy API):"
+  echo "${cloud_sql}"
+  echo "conversation_database_url_secret_id:"
+  echo "${db_secret}"
+else
+  echo "Not provisioned — set TF_ENABLE_CONVERSATION_DB=true (GitHub Variable) and run the Terraform workflow."
 fi
 echo ""
 echo "=== Done ==="

@@ -22,7 +22,7 @@ Terraform provisions (when `alert_email` is set):
 
 To enable in a given environment, pass `alert_email` via GitHub Actions (recommended) or Terraform CLI:
 
-- GitHub Actions: include `alert_email="you@domain.com"` in `TERRAFORM_TFVARS` (see [`README.md`](../README.md)).
+- GitHub Actions: set repository Variable **`TF_ALERT_EMAIL`** (see [`docs/github-actions-terraform-config.md`](github-actions-terraform-config.md)).
 - CLI: `terraform apply -var 'alert_email=you@domain.com'`
 
 If `alert_email` is empty, monitoring resources are skipped.
