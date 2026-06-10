@@ -5,7 +5,10 @@
 #   2. terraform apply  → creates instance, DB user, password + DATABASE_URL secrets
 #   3. terraform output cloud_sql_connection_name
 #   4. terraform output conversation_database_url_secret_id  → GitHub Variable
-#   5. (Optional) Add admin OAuth secrets + admin_allowed_emails for Cloud Run admin env
+#   5. (Optional) Add admin OAuth + allowlist for Cloud Run admin env:
+#      - ADMIN_SESSION_SECRET: Terraform-managed when admin_session_secret_id is empty or
+#        the default "{name_prefix}-admin-session-secret" (same pattern as DB password).
+#      - GOOGLE_OAUTH_CLIENT_SECRET: pre-create in Secret Manager (value from Google Console).
 
 locals {
   conversation_db_enabled = var.enable_conversation_db
@@ -36,10 +39,27 @@ locals {
     : data.google_secret_manager_secret_version.conversation_db_password_external[0].secret_data
   )
 
+  admin_session_managed_secret_id = "${var.name_prefix}-admin-session-secret"
+
+  # Session signing secret: Terraform-managed when unset or using the default secret id.
+  admin_session_use_managed = (
+    local.conversation_db_enabled
+    && (
+      trimspace(var.admin_session_secret_id) == ""
+      || var.admin_session_secret_id == local.admin_session_managed_secret_id
+    )
+  )
+
+  admin_session_secret_id = (
+    local.admin_session_use_managed
+    ? google_secret_manager_secret.admin_session[0].secret_id
+    : var.admin_session_secret_id
+  )
+
   # Cloud Run admin OAuth env (optional — instance exists without these).
   conversation_db_app_ready = (
     local.conversation_db_enabled
-    && trimspace(var.admin_session_secret_id) != ""
+    && trimspace(local.admin_session_secret_id) != ""
     && trimspace(var.google_oauth_client_id) != ""
     && trimspace(var.google_oauth_client_secret_id) != ""
     && length(var.admin_allowed_emails) > 0
@@ -202,13 +222,46 @@ resource "google_secret_manager_secret_iam_member" "conversation_database_url_ac
   ]
 }
 
+resource "random_password" "admin_session" {
+  count = local.admin_session_use_managed ? 1 : 0
+
+  length  = 32
+  special = true
+}
+
+resource "google_secret_manager_secret" "admin_session" {
+  count = local.admin_session_use_managed ? 1 : 0
+
+  project   = var.project_id
+  secret_id = local.admin_session_managed_secret_id
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_secret_manager_secret_version" "admin_session" {
+  count = local.admin_session_use_managed ? 1 : 0
+
+  secret      = google_secret_manager_secret.admin_session[0].id
+  secret_data = random_password.admin_session[0].result
+}
+
 resource "google_secret_manager_secret_iam_member" "admin_session_secret_accessor" {
   count = local.conversation_db_app_ready ? 1 : 0
 
   project   = var.project_id
-  secret_id = var.admin_session_secret_id
+  secret_id = local.admin_session_secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.cloud_run_api.email}"
+
+  depends_on = [
+    google_secret_manager_secret_version.admin_session,
+    google_secret_manager_secret.admin_session,
+    google_project_iam_member.github_deploy_secret_manager_admin,
+  ]
 }
 
 resource "google_secret_manager_secret_iam_member" "google_oauth_client_secret_accessor" {

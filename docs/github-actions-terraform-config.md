@@ -45,8 +45,8 @@ Set only what you need; unset variables use defaults from [`terraform/variables.
 | `TF_ENABLE_CRASH_DATA` | `enable_crash_data` | `true` |
 | `TF_ADMIN_ALLOWED_EMAILS` | `admin_allowed_emails` | `you@example.com,other@example.com` |
 | `TF_GOOGLE_OAUTH_CLIENT_ID` | `google_oauth_client_id` | OAuth client id |
-| `TF_GOOGLE_OAUTH_CLIENT_SECRET_ID` | `google_oauth_client_secret_id` | Secret Manager **secret id** (not the OAuth secret value) |
-| `TF_ADMIN_SESSION_SECRET_ID` | `admin_session_secret_id` | Secret Manager secret id |
+| `TF_GOOGLE_OAUTH_CLIENT_SECRET_ID` | `google_oauth_client_secret_id` | Secret Manager **secret id** — **must pre-create** with OAuth client secret from Google Console |
+| `TF_ADMIN_SESSION_SECRET_ID` | `admin_session_secret_id` | Leave empty or `digital-twin-admin-session-secret` for Terraform-managed; custom ids must pre-exist |
 | `TF_ADMIN_OAUTH_REDIRECT_URI` | `admin_oauth_redirect_uri` | `https://…/admin/auth/google/callback` |
 | `TF_ADMIN_UI_REDIRECT_URL` | `admin_ui_redirect_url` | `https://no-ego.net/digital-twin-admin` |
 | `TF_ESCALATION_EMAIL_TO` | `escalation_email_to` | `you@example.com` |
@@ -54,6 +54,23 @@ Set only what you need; unset variables use defaults from [`terraform/variables.
 Comma-separated lists (`CORS_ALLOWED_ORIGINS`, `TF_ADMIN_ALLOWED_EMAILS`, `TF_GITHUB_ACTIONS_TERRAFORM_ROLES`) are converted to JSON arrays for Terraform.
 
 Booleans (`TF_ENABLE_CONVERSATION_DB`, etc.): `true` / `false` (also `1` / `0`, `yes` / `no`).
+
+## Admin OAuth bootstrap
+
+After `TF_ENABLE_CONVERSATION_DB=true`, wire Google sign-in:
+
+1. **Google Cloud Console** → Credentials → OAuth 2.0 Client ID (Web):
+   - Redirect URI: `https://<api-host>/admin/auth/google/callback` (must match `TF_ADMIN_OAUTH_REDIRECT_URI`)
+2. **OAuth client secret** (manual — Terraform cannot generate this):
+
+   ```bash
+   echo -n 'YOUR_CLIENT_SECRET' | gcloud secrets create digital-twin-google-oauth-client-secret \
+     --project=YOUR_PROJECT_ID --data-file=-
+   ```
+
+3. **Session signing secret** — either omit `TF_ADMIN_SESSION_SECRET_ID` or set it to `digital-twin-admin-session-secret`; Terraform creates the secret and a random value on apply. Do **not** set a custom secret id unless you created that secret first.
+4. Set GitHub Variables (`TF_GOOGLE_OAUTH_CLIENT_ID`, `TF_GOOGLE_OAUTH_CLIENT_SECRET_ID`, `TF_ADMIN_*`, `TF_ADMIN_ALLOWED_EMAILS`) and run **Terraform** workflow (apply).
+5. Verify: `curl -sS -o /dev/null -w '%{http_code}\n' https://<api-host>/admin/auth/google` → `302` (not `503` JSON).
 
 ## Workflow behaviour
 
