@@ -294,6 +294,24 @@ variable "admin_ui_redirect_url" {
   default     = ""
 }
 
+variable "family_allowed_emails" {
+  description = "Google accounts allowed for the private family gallery (admin emails are implicitly allowed). Set via TF_FAMILY_ALLOWED_EMAILS repository variable; never committed."
+  type        = list(string)
+  default     = []
+}
+
+variable "family_oauth_redirect_uri" {
+  description = "OAuth redirect URI registered in Google Cloud Console for family sign-in (FAMILY_OAUTH_REDIRECT_URI, …/family/oauth/callback)."
+  type        = string
+  default     = ""
+}
+
+variable "family_ui_redirect_url" {
+  description = "Post-login redirect to the family page on the static site (FAMILY_UI_REDIRECT_URL)."
+  type        = string
+  default     = ""
+}
+
 variable "escalation_email_to" {
   description = "Comma-separated escalation alert recipients (ESCALATION_EMAIL_TO)."
   type        = string

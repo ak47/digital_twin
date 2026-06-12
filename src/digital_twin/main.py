@@ -117,9 +117,10 @@ def _use_database() -> bool:
     return conversation_store.is_database_enabled()
 
 
-from digital_twin import admin_routes
+from digital_twin import admin_routes, family_routes
 
 app.include_router(admin_routes.router)
+app.include_router(family_routes.router)
 
 
 @app.exception_handler(OperationalError)

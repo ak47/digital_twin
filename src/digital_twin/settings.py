@@ -44,6 +44,11 @@ class Settings:
     admin_session_secret: str
     admin_session_max_age_seconds: int
 
+    family_allowed_emails: tuple[str, ...]
+    family_media_bucket: str
+    family_oauth_redirect_uri: str
+    family_ui_redirect_url: str
+
     google_oauth_client_id: str
     google_oauth_client_secret: str
     admin_oauth_redirect_uri: str
@@ -118,6 +123,14 @@ def get_settings() -> Settings:
         ),
         admin_session_secret=_env("ADMIN_SESSION_SECRET", ""),
         admin_session_max_age_seconds=max(60, _env_int("ADMIN_SESSION_MAX_AGE_SECONDS", 7200)),
+        family_allowed_emails=tuple(
+            e.strip().lower()
+            for e in _env("FAMILY_ALLOWED_EMAILS", "").split(",")
+            if e.strip()
+        ),
+        family_media_bucket=_env("FAMILY_MEDIA_BUCKET", ""),
+        family_oauth_redirect_uri=_env("FAMILY_OAUTH_REDIRECT_URI", ""),
+        family_ui_redirect_url=_env("FAMILY_UI_REDIRECT_URL", ""),
         google_oauth_client_id=_env("GOOGLE_OAUTH_CLIENT_ID", ""),
         google_oauth_client_secret=_env("GOOGLE_OAUTH_CLIENT_SECRET", ""),
         admin_oauth_redirect_uri=_env("ADMIN_OAUTH_REDIRECT_URI", ""),

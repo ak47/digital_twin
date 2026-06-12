@@ -178,6 +178,35 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      env {
+        name  = "FAMILY_MEDIA_BUCKET"
+        value = google_storage_bucket.family_media.name
+      }
+
+      dynamic "env" {
+        for_each = length(var.family_allowed_emails) > 0 ? [1] : []
+        content {
+          name  = "FAMILY_ALLOWED_EMAILS"
+          value = join(",", var.family_allowed_emails)
+        }
+      }
+
+      dynamic "env" {
+        for_each = trimspace(var.family_oauth_redirect_uri) != "" ? [1] : []
+        content {
+          name  = "FAMILY_OAUTH_REDIRECT_URI"
+          value = var.family_oauth_redirect_uri
+        }
+      }
+
+      dynamic "env" {
+        for_each = trimspace(var.family_ui_redirect_url) != "" ? [1] : []
+        content {
+          name  = "FAMILY_UI_REDIRECT_URL"
+          value = var.family_ui_redirect_url
+        }
+      }
+
       dynamic "env" {
         for_each = local.conversation_db_app_ready && trimspace(var.escalation_email_to) != "" ? [1] : []
         content {

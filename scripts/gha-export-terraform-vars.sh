@@ -114,9 +114,16 @@ elif [ -n "${GEMINI_MODEL:-}" ]; then
 fi
 _set_if_nonempty "max_output_tokens" "${TF_MAX_OUTPUT_TOKENS:-}"
 
+_set_if_nonempty "family_oauth_redirect_uri" "${TF_FAMILY_OAUTH_REDIRECT_URI:-}"
+_set_if_nonempty "family_ui_redirect_url" "${TF_FAMILY_UI_REDIRECT_URL:-}"
+
 # Lists (comma-separated GitHub Variables → JSON arrays for Terraform)
 if [ -n "${TF_ADMIN_ALLOWED_EMAILS:-}" ]; then
   export TF_VAR_admin_allowed_emails="$(_comma_to_json_list "${TF_ADMIN_ALLOWED_EMAILS}")"
+fi
+# Family emails are intentionally not echoed in the audit log below (privacy).
+if [ -n "${TF_FAMILY_ALLOWED_EMAILS:-}" ]; then
+  export TF_VAR_family_allowed_emails="$(_comma_to_json_list "${TF_FAMILY_ALLOWED_EMAILS}")"
 fi
 if [ -n "${TF_GITHUB_ACTIONS_TERRAFORM_ROLES:-}" ]; then
   export TF_VAR_github_actions_terraform_roles="$(_comma_to_json_list "${TF_GITHUB_ACTIONS_TERRAFORM_ROLES}")"
