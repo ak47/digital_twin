@@ -107,3 +107,8 @@ output "conversation_database_url_secret_id" {
   value       = local.conversation_db_enabled ? local.conversation_database_url_secret_id : null
   sensitive   = true
 }
+
+output "family_media_bucket" {
+  description = "Private family media bucket (target for scripts/migrate_family_media.py)."
+  value       = google_storage_bucket.family_media.name
+}
