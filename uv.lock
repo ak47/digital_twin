@@ -281,7 +281,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=2.8.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1.0" },
     { name = "python-json-logger", specifier = ">=2.0.7" },
     { name = "sqlalchemy", specifier = ">=2.0.40" },
