@@ -36,7 +36,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from digital_twin import conversation_store, llm, rate_limit, session_store
+from digital_twin import conversation_store, llm, rate_limit, request_guard, session_store
 from digital_twin.metrics import record_latency_ms, sized_label
 from digital_twin.observability import log_event, report_exception, setup_logging
 from digital_twin.settings import get_settings
@@ -106,6 +106,12 @@ async def request_context_middleware(request: Request, call_next):
     trace_id = _trace_id_from_header(request)
     set_request_context(request_id=request_id, trace_id=trace_id, session_id=None)
     try:
+        if not request_guard.is_allowed_path(request.url.path):
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "Not Found"},
+                headers={"X-Request-Id": request_id},
+            )
         response = await call_next(request)
     finally:
         clear_request_context()
