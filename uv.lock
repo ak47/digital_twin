@@ -491,7 +491,7 @@ wheels = [
 
 [[package]]
 name = "google-cloud-error-reporting"
-version = "1.16.0"
+version = "1.16.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "google-api-core", extra = ["grpc"] },
@@ -501,9 +501,9 @@ dependencies = [
     { name = "proto-plus" },
     { name = "protobuf" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9c/f3/350f67f47da276ea449c8dfdc187797eaea6c9c7eaef0b2a3bf99e5f4644/google_cloud_error_reporting-1.16.0.tar.gz", hash = "sha256:8c528ce4f54d3f7982731a00b53a600efc2b8d6011f2a81b77fb53224b04ff38", size = 148141, upload-time = "2026-06-22T23:21:11.503Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/27/74/ef3258accd7d8357c550f37684feef68228f4aeed4c1b10a70eba05a33fc/google_cloud_error_reporting-1.16.1.tar.gz", hash = "sha256:fd1c33062df79c685f03ac9b82a18cf57a1cf64bf761cea5a742099656508608", size = 148954, upload-time = "2026-08-25T19:18:50.604Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/05/f9/30ec0398533b99d581399c3b3f278acbbff528d094cc9b6f75d3b8a31884/google_cloud_error_reporting-1.16.0-py3-none-any.whl", hash = "sha256:db5b884896aa69d6577a0c17545a7b15a7a33e1ee4c9378185565371dde12eaf", size = 152901, upload-time = "2026-06-22T23:18:50.334Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/9f/48e58e02489fd04b5ac8ca87df48bd836723d43a4d61ab3ec8c1e7988e54/google_cloud_error_reporting-1.16.1-py3-none-any.whl", hash = "sha256:223f6489143eae35f3d1f836786022cbf4b732951bcaf761788bbd0a498c5c27", size = 152866, upload-time = "2026-08-24T21:55:35.513Z" },
 ]
 
 [[package]]
