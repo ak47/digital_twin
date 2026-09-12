@@ -19,4 +19,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PORT=8080
 EXPOSE 8080
 
-CMD ["sh", "-c", "exec uv run python -m uvicorn digital_twin.main:app --host 0.0.0.0 --port ${PORT:-8080} --log-config /app/uvicorn_logging.json"]
+CMD ["sh", "-c", "exec /app/.venv/bin/python -m uvicorn digital_twin.main:app --host 0.0.0.0 --port ${PORT:-8080} --log-config /app/uvicorn_logging.json"]
