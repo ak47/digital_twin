@@ -63,7 +63,7 @@ resource "google_cloud_run_v2_job" "session_digest" {
 
       containers {
         image   = var.container_image
-        command = ["uv", "run", "python", "-m", "digital_twin.run_session_digest"]
+        command = ["/app/.venv/bin/python", "-m", "digital_twin.run_session_digest"]
 
         env {
           name  = "GCP_PROJECT_ID"
