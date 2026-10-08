@@ -46,6 +46,21 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      # Limits and cpu_idle match the previous API defaults; startup_cpu_boost
+      # gives the container extra CPU while it imports the app (cold start is
+      # CPU-bound), which keeps slow-host cold starts inside the probe budget.
+      resources {
+        limits = {
+          cpu    = "1000m"
+          memory = "512Mi"
+        }
+        cpu_idle          = true
+        startup_cpu_boost = true
+      }
+
+      # Normal cold starts pass in ~8–15s. Budget is 2 + 24 × 5 ≈ 122s so a
+      # degraded host yields a slow first response instead of a 503 (a 43s
+      # import stall on 2026-10-08 exceeded the previous ~62s budget).
       startup_probe {
         http_get {
           path = "/health"
@@ -54,7 +69,7 @@ resource "google_cloud_run_v2_service" "api" {
         initial_delay_seconds = 2
         timeout_seconds       = 5
         period_seconds        = 5
-        failure_threshold     = 12
+        failure_threshold     = 24
       }
 
       env {
